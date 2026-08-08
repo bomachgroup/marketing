@@ -1,75 +1,151 @@
-# React + TypeScript + Vite
+# Bomach OS Marketing
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Bomach OS Marketing is the marketing and revenue operating system frontend for Bomach Group of Company. It is a React, TypeScript, Vite, Tailwind CSS, and TanStack Router application wired to the Bomach backend API.
 
-Currently, two official plugins are available:
+The app covers the CEO/marketing workspace across workdesk, lead management, campaign operations, revenue execution, governance, operations, enablement, and reporting screens. Most production-facing screens are API-backed and use defensive response transformers because some backend schemas are still broad or evolving.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Tech Stack
 
-## React Compiler
+- React 19
+- TypeScript 6
+- Vite 8
+- Tailwind CSS 4
+- TanStack Router
+- Bun package manager
+- Playwright for E2E smoke tests
+- ESLint for static checks
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Backend
 
-## Expanding the ESLint configuration
+The API client defaults to:
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+```txt
+https://bomachauthtest.bgbot.app
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Override it with:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+```env
+VITE_API_BASE_URL=https://your-api-host
+```
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+The local OpenAPI reference is stored in:
 
+```txt
+openapi.yaml
+```
+
+Implementation status and backend contract gaps are tracked in:
+
+```txt
+IMPLEMENTATION_PROGRESS.md
+BACKEND_CONTRACT_GAPS.md
+```
+
+## Getting Started
+
+Install dependencies with Bun:
+
+```bash
+bun install
+```
+
+Start the dev server:
+
+```bash
+bun run dev
+```
+
+Build the app:
+
+```bash
+bun run build
+```
+
+Run lint:
+
+```bash
+bun run lint
+```
+
+Run E2E tests:
+
+```bash
+bun run test:e2e
+```
+
+## Project Structure
+
+```txt
+src/
+  components/
+    layout/          App shell, sidebar, login, permission fallback
+    screens/         Feature screens and route views
+    shared/          Reusable UI primitives
+  context/           Auth, store, toast, and shell state
+  data/              Shared data types and legacy defaults
+  routes/            TanStack route modules
+  services/
+    api/             API clients and endpoint wrappers
+    transformers/    Defensive backend-to-UI mappers
+  utils/             Formatting and search helpers
+```
+
+## Main Product Areas
+
+- My Work Desk
+- Lead 360 Journal
+- CRM Pipeline
+- Campaign Operating System
+- Content Calendar
+- Media Library
+- Revenue Command
+- Daily Execution
+- 13-Week Turnaround
+- Lead Control Tower
+- Funnel Leak Audit
+- Forecast and Coverage
+- Compliance
+- Operations, Support, Partners, and Analytics
+- Team Directory
+- Enablement and Growth
+- Governance and Campaign Operations
+
+## Auth and Permissions
+
+Authentication is JWT-based. Access and refresh tokens are stored through the app token store and attached by `src/services/api/apiClient.ts`.
+
+Navigation is permission-aware. Sidebar routes are filtered through `src/navigation.ts`, using the authenticated role and backend permission map so users should only see pages they can access.
+
+## Development Notes
+
+- Use Bun for dependency installation and project scripts.
+- Do not use `npm install`; the project enforces Bun during install.
+- Keep backend writes success-first: update UI state only after the API call succeeds.
+- Avoid demo or local-only fallback data on production-facing pages.
+- Disabled controls usually indicate confirmed backend gaps rather than unfinished UI polish.
+- Keep wide tables and matrices scrollable inside their own containers, not at the body level.
+
+## Validation Checklist
+
+Before pushing material frontend changes:
+
+```bash
+bun run build
+bun run lint
+```
+
+When Bun is unavailable in the local shell, the equivalent local binaries are:
+
+```bash
+.\node_modules\.bin\tsc.cmd -b --noEmit --pretty false
+.\node_modules\.bin\eslint.cmd .
+```
+
+## Repository
+
+GitHub remote:
+
+```txt
+https://github.com/bomach-group-company/marketing.git
 ```
