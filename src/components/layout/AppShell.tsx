@@ -74,13 +74,18 @@ export default function AppShell() {
     return <LoginScreen />
   }
 
+  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+  const isEmbed = searchParams.get('embed') === 'true' || searchParams.get('embedded') === 'true'
+  const hideSidebar = isEmbed || searchParams.get('hideSidebar') === 'true' || searchParams.get('hide_sidebar') === 'true'
+  const hideTopbar = searchParams.get('hideTopbar') === 'true' || searchParams.get('hide_topbar') === 'true'
+
   return (
     <ShellProvider>
       <div className="flex h-dvh min-h-screen w-full overflow-hidden bg-bg">
-        <Sidebar />
+        {!hideSidebar && <Sidebar />}
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          <ShellTopbar fallbackTitle={screenTitleFromPath(location.pathname)} />
+          {!hideTopbar && <ShellTopbar fallbackTitle={screenTitleFromPath(location.pathname)} />}
           <main ref={mainRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
             {!canAccess ? (
               <NoPermissionPage screen={currentScreen} />

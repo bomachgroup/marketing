@@ -313,6 +313,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async function restoreSession() {
       clearLegacyStoredTokens()
 
+      // 1. Check if an access token was provided in the URL query string (e.g. from Flutter webview embedding)
+      const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+      const tokenFromUrl = searchParams.get('token') || searchParams.get('access_token')
+      const refreshTokenFromUrl = searchParams.get('refresh_token')
+
+      if (tokenFromUrl) {
+        try {
+          setAccessToken(tokenFromUrl)
+          if (refreshTokenFromUrl) {
+            setRefreshToken(refreshTokenFromUrl)
+          }
+
+          const res = await authService.getCurrentUser()
+          if (res.data?.id) {
+            setUser(res.data)
+            setIsLoggedIn(true)
+            await fetchUserRoleAndPermissions(res.data)
+            setIsLoading(false)
+            return
+          }
+        } catch (err) {
+          console.warn('Failed to authenticate with token from URL:', err)
+        }
+      }
+
+      // 2. Try cookie/refresh session
       try {
         const refreshRes = await authService.refreshSession()
         if (refreshRes.data?.access_token) {
@@ -343,6 +369,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     restoreSession()
+  }, [])
+
+  // Listen for auth token postMessage events (e.g., from embedding parent frames/webviews)
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      if (event.data && typeof event.data === 'object' && (event.data.type === 'BOMACH_AUTH_TOKEN' || event.data.type === 'SET_AUTH_TOKEN')) {
+        const { token, refreshToken } = event.data
+        if (token && typeof token === 'string') {
+          try {
+            setAccessToken(token)
+            if (refreshToken && typeof refreshToken === 'string') {
+              setRefreshToken(refreshToken)
+            }
+            const res = await authService.getCurrentUser()
+            if (res.data?.id) {
+              setUser(res.data)
+              setIsLoggedIn(true)
+              await fetchUserRoleAndPermissions(res.data)
+              setIsLoading(false)
+            }
+          } catch (e) {
+            console.warn('Failed to authenticate via message token:', e)
+          }
+        }
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
   }, [])
 
   const login = async (email: string, pass: string) => {
