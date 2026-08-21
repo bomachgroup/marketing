@@ -1,6 +1,28 @@
 import { clearAccessToken, clearRefreshToken, getAccessToken, getRefreshToken, setAccessToken } from './authTokenStore'
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://bomachauthtest.bgbot.app'
+export function getApiBaseUrl(): string {
+  const envUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()
+  if (envUrl) {
+    return envUrl.replace(/\/+$/, '')
+  }
+
+  const isLocalhost =
+    typeof window !== 'undefined' &&
+    Boolean(
+      window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1' ||
+        window.location.hostname === '[::1]' ||
+        window.location.hostname.endsWith('.local'),
+    )
+
+  if (import.meta.env.DEV || isLocalhost) {
+    return 'https://bomachauthtest.bgbot.app'
+  }
+
+  return 'https://bomachauth.bgbot.app'
+}
+
+const BASE_URL = getApiBaseUrl()
 
 export interface ApiResponse<T = unknown> {
   data?: T
