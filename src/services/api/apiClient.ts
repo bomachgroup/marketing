@@ -6,23 +6,38 @@ export function getApiBaseUrl(): string {
     return envUrl.replace(/\/+$/, '')
   }
 
-  const isLocalhost =
-    typeof window !== 'undefined' &&
-    Boolean(
-      window.location.hostname === 'localhost' ||
-        window.location.hostname === '127.0.0.1' ||
-        window.location.hostname === '[::1]' ||
-        window.location.hostname.endsWith('.local'),
-    )
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname.toLowerCase()
 
-  if (import.meta.env.DEV || isLocalhost) {
+    // Explicit production domains (including https://bomach-os-app.web.app/)
+    if (
+      hostname === 'bomach-os-app.web.app' ||
+      hostname.endsWith('.web.app') ||
+      hostname === 'bomach-os-app.firebaseapp.com' ||
+      hostname.endsWith('.firebaseapp.com') ||
+      hostname === 'bomachauth.bgbot.app'
+    ) {
+      return 'https://bomachauth.bgbot.app'
+    }
+
+    const isLocalhost =
+      hostname === 'localhost' ||
+      hostname === '127.0.0.1' ||
+      hostname === '[::1]' ||
+      hostname.endsWith('.local')
+
+    if (isLocalhost) {
+      return 'https://bomachauthtest.bgbot.app'
+    }
+  }
+
+  if (import.meta.env.DEV) {
     return 'https://bomachauthtest.bgbot.app'
   }
 
   return 'https://bomachauth.bgbot.app'
 }
 
-const BASE_URL = getApiBaseUrl()
 
 export interface ApiResponse<T = unknown> {
   data?: T
@@ -143,7 +158,7 @@ export async function refreshAccessTokenFromCookie(): Promise<string | null> {
     return null
   }
 
-  refreshPromise = fetch(`${BASE_URL}/api/v1/auth/refresh`, {
+  refreshPromise = fetch(`${getApiBaseUrl()}/api/v1/auth/refresh`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -196,7 +211,7 @@ export async function apiRequest<T = any>(
   }
 
   try {
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
+    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       ...options,
       headers,
       credentials: options.credentials || 'include',
@@ -250,7 +265,8 @@ export async function apiFormRequest<T = any>(
   }
 
   try {
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
+    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+
       ...options,
       method: options.method || 'POST',
       body: formData,
