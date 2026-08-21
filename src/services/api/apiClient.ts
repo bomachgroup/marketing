@@ -1,6 +1,14 @@
 import { clearAccessToken, clearRefreshToken, getAccessToken, getRefreshToken, setAccessToken } from './authTokenStore'
 
 export function getApiBaseUrl(): string {
+  if (typeof window !== 'undefined') {
+    const searchParams = new URLSearchParams(window.location.search)
+    const override = searchParams.get('apiBaseUrl') || searchParams.get('backendUrl') || searchParams.get('apiUrl')
+    if (override) {
+      return override.trim().replace(/\/+$/, '').replace(/\/api\/v1\/?$/, '')
+    }
+  }
+
   const envUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()
   if (envUrl) {
     return envUrl.replace(/\/+$/, '')
