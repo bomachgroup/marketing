@@ -8,26 +8,30 @@ export function getApiBaseUrl(): string {
 
   if (typeof window !== 'undefined') {
     const hostname = window.location.hostname.toLowerCase()
+    const referrer = (document.referrer || '').toLowerCase()
 
-    // Explicit production domains (including https://bomach-os-app.web.app/)
-    if (
-      hostname === 'bomach-os-app.web.app' ||
-      hostname.endsWith('.web.app') ||
-      hostname === 'bomach-os-app.firebaseapp.com' ||
-      hostname.endsWith('.firebaseapp.com') ||
-      hostname === 'bomachauth.bgbot.app'
-    ) {
-      return 'https://bomachauth.bgbot.app'
-    }
-
-    const isLocalhost =
+    // 1. Test environments (bomach-os-test.web.app or localhost) -> test backend
+    const isTestEnvironment =
+      hostname.includes('bomach-os-test') ||
+      hostname.includes('-test.web.app') ||
+      referrer.includes('bomach-os-test') ||
       hostname === 'localhost' ||
       hostname === '127.0.0.1' ||
       hostname === '[::1]' ||
       hostname.endsWith('.local')
 
-    if (isLocalhost) {
+    if (isTestEnvironment) {
       return 'https://bomachauthtest.bgbot.app'
+    }
+
+    // 2. Production app environments (bomach-os-app.web.app) -> production backend without test
+    const isProdAppEnvironment =
+      hostname.includes('bomach-os-app') ||
+      referrer.includes('bomach-os-app') ||
+      hostname === 'bomachauth.bgbot.app'
+
+    if (isProdAppEnvironment) {
+      return 'https://bomachauth.bgbot.app'
     }
   }
 
@@ -37,6 +41,7 @@ export function getApiBaseUrl(): string {
 
   return 'https://bomachauth.bgbot.app'
 }
+
 
 
 export interface ApiResponse<T = unknown> {
