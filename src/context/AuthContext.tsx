@@ -357,8 +357,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         /* Invalid, expired, or unavailable refresh cookie. */
       }
 
-      clearAccessToken()
-      clearRefreshToken()
+      const isEmbed = searchParams.get('embed') === 'true' || searchParams.get('embedded') === 'true' || Boolean(tokenFromUrl)
+      if (!isEmbed) {
+        clearAccessToken()
+        clearRefreshToken()
+      }
       setUser(null)
       setUserRole(null)
       setEmployeeDetails(null)
@@ -369,6 +372,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     restoreSession()
+
+    // Listen for postMessage from parent container (e.g. Bomach OS webview)
+    const handleMessage = async (e: MessageEvent) => {
+      if (e.data && (e.data.type === 'BOMACH_AUTH_TOKEN' || e.data.token)) {
+        const incomingToken = String(e.data.token || e.data.accessToken || '')
+        const incomingRefreshToken = e.data.refreshToken ? String(e.data.refreshToken) : incomingToken
+        if (incomingToken) {
+          setAccessToken(incomingToken)
+          if (incomingRefreshToken) {
+            setRefreshToken(incomingRefreshToken)
+          }
+          try {
+            const res = await authService.getCurrentUser()
+            if (res.data?.id) {
+              setUser(res.data)
+              setIsLoggedIn(true)
+              await fetchUserRoleAndPermissions(res.data)
+            }
+          } catch (err) {
+            console.warn('Failed to authenticate with postMessage token:', err)
+          } finally {
+            setIsLoading(false)
+          }
+        }
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
   }, [])
 
   // Listen for auth token postMessage events (e.g., from embedding parent frames/webviews)

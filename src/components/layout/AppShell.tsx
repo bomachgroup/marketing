@@ -66,18 +66,21 @@ export default function AppShell() {
     window.scrollTo(0, 0)
   }, [location.pathname])
 
+  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+  const isEmbed = searchParams.get('embed') === 'true' || searchParams.get('embedded') === 'true' || Boolean(searchParams.get('token')) || Boolean(searchParams.get('access_token'))
+  const hideSidebar = isEmbed || searchParams.get('hideSidebar') === 'true' || searchParams.get('hide_sidebar') === 'true'
+  const hideTopbar = searchParams.get('hideTopbar') === 'true' || searchParams.get('hide_topbar') === 'true'
+
   if (isLoading) {
     return <AuthSkeleton />
   }
 
   if (!isLoggedIn) {
+    if (isEmbed) {
+      return <AuthSkeleton />
+    }
     return <LoginScreen />
   }
-
-  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-  const isEmbed = searchParams.get('embed') === 'true' || searchParams.get('embedded') === 'true'
-  const hideSidebar = isEmbed || searchParams.get('hideSidebar') === 'true' || searchParams.get('hide_sidebar') === 'true'
-  const hideTopbar = searchParams.get('hideTopbar') === 'true' || searchParams.get('hide_topbar') === 'true'
 
   return (
     <ShellProvider>
