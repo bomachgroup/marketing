@@ -313,10 +313,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async function restoreSession() {
       clearLegacyStoredTokens()
 
-      // 1. Check if an access token was provided in the URL query string (e.g. from Flutter webview embedding)
+      // 1. Check if an access token was provided in the URL query string or in authTokenStore
       const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-      const tokenFromUrl = searchParams.get('token') || searchParams.get('access_token')
-      const refreshTokenFromUrl = searchParams.get('refresh_token')
+      const tokenFromUrl = searchParams.get('token') || searchParams.get('access_token') || getAccessToken()
+      const refreshTokenFromUrl = searchParams.get('refresh_token') || searchParams.get('refreshToken') || getRefreshToken()
 
       if (tokenFromUrl) {
         try {
@@ -326,15 +326,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
 
           const res = await authService.getCurrentUser()
-          if (res.data?.id) {
-            setUser(res.data)
+          const userObj = res.data && ((res.data as any).id ? res.data : ((res.data as any).user || res.data))
+          if (userObj && (userObj.id || userObj.email)) {
+            setUser(userObj)
             setIsLoggedIn(true)
-            await fetchUserRoleAndPermissions(res.data)
+            await fetchUserRoleAndPermissions(userObj)
             setIsLoading(false)
             return
           }
         } catch (err) {
-          console.warn('Failed to authenticate with token from URL:', err)
+          console.warn('Failed to authenticate with token from URL/store:', err)
         }
       }
 
