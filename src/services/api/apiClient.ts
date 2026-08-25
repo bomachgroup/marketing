@@ -207,6 +207,13 @@ export async function refreshAccessTokenFromCookie(): Promise<string | null> {
 
 // Most wrappers in this codebase consume broad backend response shapes and narrow them in transformers.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeEndpoint(endpoint: string): string {
+  const [path, query] = endpoint.split('?')
+  // Ensure trailing slash for REST routes to avoid cross-origin 301 redirects that drop Authorization headers
+  const normalizedPath = path.endsWith('/') || path.includes('.') ? path : `${path}/`
+  return query ? `${normalizedPath}?${query}` : normalizedPath
+}
+
 export async function apiRequest<T = any>(
   endpoint: string,
   options: RequestInit = {},
@@ -223,8 +230,10 @@ export async function apiRequest<T = any>(
     headers['Authorization'] = `Bearer ${token}`
   }
 
+  const url = `${getApiBaseUrl()}${normalizeEndpoint(endpoint)}`
+
   try {
-    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+    const response = await fetch(url, {
       ...options,
       headers,
       credentials: options.credentials || 'include',
@@ -277,8 +286,10 @@ export async function apiFormRequest<T = any>(
     headers.Authorization = `Bearer ${token}`
   }
 
+  const url = `${getApiBaseUrl()}${normalizeEndpoint(endpoint)}`
+
   try {
-    const response = await fetch(`${getApiBaseUrl()}${endpoint}`, {
+    const response = await fetch(url, {
 
       ...options,
       method: options.method || 'POST',
