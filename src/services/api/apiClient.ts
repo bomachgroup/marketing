@@ -10,13 +10,26 @@ export function setApiBaseUrl(url: string) {
   } catch {}
 }
 
+export function extractSearchParams(): URLSearchParams {
+  if (typeof window === 'undefined') return new URLSearchParams()
+  const search = window.location.search
+  if (search && search.length > 1) return new URLSearchParams(search)
+
+  const hash = window.location.hash
+  const qIdx = hash.indexOf('?')
+  if (qIdx !== -1) {
+    return new URLSearchParams(hash.substring(qIdx))
+  }
+  return new URLSearchParams()
+}
+
 export function getApiBaseUrl(): string {
   if (cachedApiBaseUrl) {
     return cachedApiBaseUrl
   }
 
   if (typeof window !== 'undefined') {
-    const searchParams = new URLSearchParams(window.location.search)
+    const searchParams = extractSearchParams()
     const override = searchParams.get('apiBaseUrl') || searchParams.get('backendUrl') || searchParams.get('apiUrl')
     if (override) {
       const clean = override.trim().replace(/\/+$/, '').replace(/\/api\/v1\/?$/, '')

@@ -2,7 +2,7 @@
 import { createContext, useCallback, useContext, useState, useEffect, type ReactNode } from 'react'
 import { authService, type UserProfile, type UserRoleResponse, type EmployeeDetailsResponse } from '../services/api/authService'
 import { clearAccessToken, clearLegacyStoredTokens, clearRefreshToken, getAccessToken, getRefreshToken, setAccessToken, setRefreshToken } from '../services/api/authTokenStore'
-import { setApiBaseUrl } from '../services/api/apiClient'
+import { extractSearchParams, setApiBaseUrl } from '../services/api/apiClient'
 import { ROLES } from '../data/defaults'
 import { firstAccessibleScreen } from '../navigation'
 
@@ -409,7 +409,7 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
       clearLegacyStoredTokens()
 
       // 1. Check if an access token was provided in the URL query string or in authTokenStore
-      const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+      const searchParams = extractSearchParams()
       const tokenFromUrl = searchParams.get('token') || searchParams.get('access_token') || getAccessToken()
       const refreshTokenFromUrl = searchParams.get('refresh_token') || searchParams.get('refreshToken') || getRefreshToken()
       const backendUrlFromUrl = searchParams.get('apiBaseUrl') || searchParams.get('backendUrl') || searchParams.get('apiUrl')
@@ -427,6 +427,7 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
             }
           }
 
+          const nameParam = searchParams.get('fullName') || searchParams.get('name') || searchParams.get('userName') || ''
           const tokenProfile = userFromToken(tokenFromUrl || '', searchParams)
           setUser(tokenProfile)
           setIsLoggedIn(true)
@@ -439,9 +440,18 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
           if (isCancelled) return
 
           const userObj = res?.data && ((res.data as any).id ? res.data : ((res.data as any).user || res.data))
-          const effectiveUser = (userObj && (userObj.id || userObj.email))
+          let effectiveUser = (userObj && (userObj.id || userObj.email))
             ? { ...tokenProfile, ...userObj }
             : tokenProfile
+
+          if (nameParam) {
+            const parts = nameParam.trim().split(/\s+/)
+            effectiveUser = {
+              ...effectiveUser,
+              first_name: parts[0] || '',
+              last_name: parts.slice(1).join(' ') || '',
+            }
+          }
 
           setUser(effectiveUser)
           setIsLoggedIn(true)
@@ -503,6 +513,7 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
         const incomingToken = String(e.data.token || e.data.accessToken || '')
         const incomingRefreshToken = e.data.refreshToken ? String(e.data.refreshToken) : incomingToken
         const incomingApiBase = e.data.apiBaseUrl || e.data.backendUrl || e.data.apiUrl
+        const nameFromMsg = e.data.fullName || e.data.name || (e.data.user && (e.data.user.fullName || e.data.user.name))
         if (incomingApiBase) {
           setApiBaseUrl(String(incomingApiBase))
         }
@@ -520,9 +531,18 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
           try {
             const res = await authService.getCurrentUser()
             const userObj = res.data && ((res.data as any).id ? res.data : ((res.data as any).user || res.data))
-            const effectiveUser = (userObj && (userObj.id || userObj.email))
+            let effectiveUser = (userObj && (userObj.id || userObj.email))
               ? { ...tokenProfile, ...userObj }
               : tokenProfile
+
+            if (nameFromMsg) {
+              const parts = String(nameFromMsg).trim().split(/\s+/)
+              effectiveUser = {
+                ...effectiveUser,
+                first_name: parts[0] || '',
+                last_name: parts.slice(1).join(' ') || '',
+              }
+            }
 
             if (effectiveUser) {
               setUser(effectiveUser)
