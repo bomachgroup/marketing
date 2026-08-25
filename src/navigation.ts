@@ -54,14 +54,11 @@ function allRoleNavGroups(): NavGroup[] {
 }
 
 export function accessibleNavGroups(
-  roleKey: string,
-  permissions: Record<string, string[]>,
+  _roleKey: string,
+  _permissions: Record<string, string[]>,
   hasPermission: (resource: string, action?: string) => boolean,
 ): NavGroup[] {
-  const hasBackendPermissions = Object.keys(permissions).length > 0
-  const sourceGroups = hasBackendPermissions
-    ? allRoleNavGroups()
-    : (ROLES[roleKey] || ROLES.coord).nav
+  const sourceGroups = allRoleNavGroups()
   const seenScreens = new Set<string>()
   const groups: NavGroup[] = []
 
