@@ -7,20 +7,25 @@ export function setApiBaseUrl(url: string) {
   cachedApiBaseUrl = url.trim().replace(/\/+$/, '').replace(/\/api\/v1\/?$/, '')
   try {
     sessionStorage.setItem('bomach_api_base_url', cachedApiBaseUrl)
+    localStorage.setItem('bomach_api_base_url', cachedApiBaseUrl)
   } catch {}
 }
 
 export function extractSearchParams(): URLSearchParams {
   if (typeof window === 'undefined') return new URLSearchParams()
-  const search = window.location.search
-  if (search && search.length > 1) return new URLSearchParams(search)
-
-  const hash = window.location.hash
-  const qIdx = hash.indexOf('?')
-  if (qIdx !== -1) {
-    return new URLSearchParams(hash.substring(qIdx))
+  const combined = new URLSearchParams(window.location.search || '')
+  if (window.location.hash) {
+    const qIdx = window.location.hash.indexOf('?')
+    if (qIdx !== -1) {
+      const hashParams = new URLSearchParams(window.location.hash.substring(qIdx))
+      hashParams.forEach((val, key) => {
+        if (!combined.has(key)) {
+          combined.set(key, val)
+        }
+      })
+    }
   }
-  return new URLSearchParams()
+  return combined
 }
 
 export function getApiBaseUrl(): string {
@@ -30,7 +35,11 @@ export function getApiBaseUrl(): string {
 
   if (typeof window !== 'undefined') {
     const searchParams = extractSearchParams()
-    const override = searchParams.get('apiBaseUrl') || searchParams.get('backendUrl') || searchParams.get('apiUrl')
+    const override =
+      searchParams.get('apiBaseUrl') ||
+      searchParams.get('backendUrl') ||
+      searchParams.get('apiUrl') ||
+      searchParams.get('authBaseUrl')
     if (override) {
       const clean = override.trim().replace(/\/+$/, '').replace(/\/api\/v1\/?$/, '')
       setApiBaseUrl(clean)
@@ -38,50 +47,29 @@ export function getApiBaseUrl(): string {
     }
 
     try {
-      const stored = sessionStorage.getItem('bomach_api_base_url')
+      const stored = sessionStorage.getItem('bomach_api_base_url') || localStorage.getItem('bomach_api_base_url')
       if (stored) {
         cachedApiBaseUrl = stored
         return stored
       }
     } catch {}
-  }
 
-  const envUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()
-  if (envUrl) {
-    return envUrl.replace(/\/+$/, '')
-  }
-
-  if (typeof window !== 'undefined') {
     const hostname = window.location.hostname.toLowerCase()
     const referrer = (document.referrer || '').toLowerCase()
 
-    // 1. Test environments (bomach-os-test.web.app or localhost) -> test backend
+    // 1. Only test environments (bomach-os-test.web.app or localhost) -> test backend
     const isTestEnvironment =
-      hostname.includes('bomach-os-test') ||
-      hostname.includes('-test.web.app') ||
-      referrer.includes('bomach-os-test') ||
+      hostname === 'bomach-os-test.web.app' ||
+      referrer.includes('bomach-os-test.web.app') ||
       hostname === 'localhost' ||
       hostname === '127.0.0.1' ||
-      hostname === '[::1]' ||
-      hostname.endsWith('.local')
+      hostname === '[::1]'
 
     if (isTestEnvironment) {
       return 'https://bomachauthtest.bgbot.app'
     }
 
-    // 2. Production app environments (bomach-os-app.web.app) -> production backend without test
-    const isProdAppEnvironment =
-      hostname.includes('bomach-os-app') ||
-      referrer.includes('bomach-os-app') ||
-      hostname === 'bomachauth.bgbot.app'
-
-    if (isProdAppEnvironment) {
-      return 'https://bomachauth.bgbot.app'
-    }
-  }
-
-  if (import.meta.env.DEV) {
-    return 'https://bomachauthtest.bgbot.app'
+    return 'https://bomachauth.bgbot.app'
   }
 
   return 'https://bomachauth.bgbot.app'
