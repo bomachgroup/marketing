@@ -524,16 +524,24 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
           }
 
           const tokenProfile = userFromToken(incomingToken)
-          if (tokenProfile) {
-            setUser(tokenProfile)
+          let effectiveProfile = tokenProfile
+          if (nameFromMsg) {
+            const parts = String(nameFromMsg).trim().split(/\s+/)
+            effectiveProfile = {
+              ...effectiveProfile,
+              first_name: parts[0] || '',
+              last_name: parts.slice(1).join(' ') || '',
+            }
           }
+          setUser(effectiveProfile)
+          setIsLoggedIn(true)
 
           try {
             const res = await authService.getCurrentUser()
             const userObj = res.data && ((res.data as any).id ? res.data : ((res.data as any).user || res.data))
             let effectiveUser = (userObj && (userObj.id || userObj.email))
-              ? { ...tokenProfile, ...userObj }
-              : tokenProfile
+              ? { ...effectiveProfile, ...userObj }
+              : effectiveProfile
 
             if (nameFromMsg) {
               const parts = String(nameFromMsg).trim().split(/\s+/)
@@ -551,6 +559,7 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
             }
           } catch (err) {
             console.warn('Failed to authenticate with postMessage token:', err)
+            await fetchUserRoleAndPermissions(effectiveProfile)
           } finally {
             setIsLoading(false)
           }

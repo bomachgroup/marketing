@@ -141,7 +141,9 @@ export function WorkdeskPage() {
     employeeDetails?.position ||
     employeeDetails?.designation ||
     user?.role ||
-    ((user as any)?.is_superuser ? "CEO & Founder" : "Staff");
+    (userFullName.toLowerCase().match(/tochukwu|anigbo|ceo|founder|admin|super/) || (user as any)?.is_superuser
+      ? "CEO & Founder"
+      : "Staff");
 
   // Fetch real Work Desk data strictly from backend endpoints
   const loadWorkdeskData = useCallback(async () => {
