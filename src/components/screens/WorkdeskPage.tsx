@@ -135,8 +135,10 @@ export function WorkdeskPage() {
   const roleTitle =
     summaryData?.job_title ||
     userRole?.name ||
+    employeeDetails?.role_name ||
     employeeDetails?.position ||
-    ROLES[activeRole as keyof typeof ROLES]?.r ||
+    employeeDetails?.designation ||
+    user?.role ||
     "Team Member";
 
   // Fetch real Work Desk data strictly from backend endpoints

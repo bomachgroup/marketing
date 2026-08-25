@@ -329,6 +329,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+function userFromToken(token: string): UserProfile | null {
+  try {
+    const parts = token.split('.')
+    if (parts.length < 2) return null
+    const base64Url = parts[1]
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    )
+    const payload = JSON.parse(jsonPayload)
+    if (!payload || typeof payload !== 'object') return null
+
+    const userId = Number(payload.user_id || payload.id || payload.sub || 1)
+    const email = String(payload.email || payload.user_email || '')
+    const username = String(payload.username || (email ? email.split('@')[0] : ''))
+    const firstName = String(payload.first_name || payload.firstName || '')
+    const lastName = String(payload.last_name || payload.lastName || '')
+    const role = String(payload.role || payload.role_name || payload.designation || '')
+
+    return {
+      id: Number.isFinite(userId) ? userId : 1,
+      email: email || 'user@bomach.com',
+      username: username || 'user',
+      first_name: firstName || undefined,
+      last_name: lastName || undefined,
+      is_verified: true,
+      created_at: new Date().toISOString(),
+      role: role || undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
   // Restore authenticated user session on app mount
   useEffect(() => {
     let isCancelled = false
@@ -348,6 +385,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             setRefreshToken(refreshTokenFromUrl)
           }
 
+          const tokenProfile = userFromToken(tokenFromUrl)
+          if (tokenProfile) {
+            setUser(tokenProfile)
+          }
+
           const res = await Promise.race([
             authService.getCurrentUser(),
             new Promise<{ data?: UserProfile }>((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000)),
@@ -356,26 +398,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (isCancelled) return
 
           const userObj = res?.data && ((res.data as any).id ? res.data : ((res.data as any).user || res.data))
-          if (userObj && (userObj.id || userObj.email)) {
-            setUser(userObj)
+          const effectiveUser = (userObj && (userObj.id || userObj.email))
+            ? { ...tokenProfile, ...userObj }
+            : tokenProfile
+
+          if (effectiveUser) {
+            setUser(effectiveUser)
             setIsLoggedIn(true)
-            await fetchUserRoleAndPermissions(userObj)
-            setIsLoading(false)
-            return
-          } else {
-            // Fallback: If token was provided, create a staff session so app does not get stuck in loader
-            const fallbackUser: UserProfile = {
-              id: 1,
-              email: 'staff@bomach.com',
-              username: 'staff',
-              first_name: 'Staff',
-              last_name: 'Member',
-              is_verified: true,
-              created_at: new Date().toISOString(),
-            }
-            setUser(fallbackUser)
-            setIsLoggedIn(true)
-            await fetchUserRoleAndPermissions(fallbackUser)
+            await fetchUserRoleAndPermissions(effectiveUser)
             setIsLoading(false)
             return
           }
@@ -431,26 +461,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (incomingRefreshToken) {
             setRefreshToken(incomingRefreshToken)
           }
+
+          const tokenProfile = userFromToken(incomingToken)
+          if (tokenProfile) {
+            setUser(tokenProfile)
+          }
+
           try {
             const res = await authService.getCurrentUser()
             const userObj = res.data && ((res.data as any).id ? res.data : ((res.data as any).user || res.data))
-            if (userObj && (userObj.id || userObj.email)) {
-              setUser(userObj)
+            const effectiveUser = (userObj && (userObj.id || userObj.email))
+              ? { ...tokenProfile, ...userObj }
+              : tokenProfile
+
+            if (effectiveUser) {
+              setUser(effectiveUser)
               setIsLoggedIn(true)
-              await fetchUserRoleAndPermissions(userObj)
-            } else {
-              const fallbackUser: UserProfile = {
-                id: 1,
-                email: 'staff@bomach.com',
-                username: 'staff',
-                first_name: 'Staff',
-                last_name: 'Member',
-                is_verified: true,
-                created_at: new Date().toISOString(),
-              }
-              setUser(fallbackUser)
-              setIsLoggedIn(true)
-              await fetchUserRoleAndPermissions(fallbackUser)
+              await fetchUserRoleAndPermissions(effectiveUser)
             }
           } catch (err) {
             console.warn('Failed to authenticate with postMessage token:', err)
