@@ -329,40 +329,78 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-function userFromToken(token: string): UserProfile | null {
+function userFromToken(token: string, searchParams?: URLSearchParams): UserProfile | null {
+  let userId = 1
+  let email = ''
+  let username = ''
+  let firstName = ''
+  let lastName = ''
+  let role = ''
+
+  if (searchParams) {
+    const nameParam = searchParams.get('fullName') || searchParams.get('name') || searchParams.get('userName') || ''
+    if (nameParam) {
+      const parts = nameParam.trim().split(/\s+/)
+      firstName = parts[0] || ''
+      lastName = parts.slice(1).join(' ') || ''
+      username = nameParam.toLowerCase().replace(/\s+/g, '.')
+    }
+    const emailParam = searchParams.get('email') || searchParams.get('userEmail') || ''
+    if (emailParam) email = emailParam
+    const roleParam = searchParams.get('role') || searchParams.get('userRole') || ''
+    if (roleParam) role = roleParam
+  }
+
   try {
     const parts = token.split('.')
-    if (parts.length < 2) return null
-    const base64Url = parts[1]
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
-    const jsonPayload = decodeURIComponent(
-      atob(base64)
-        .split('')
-        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
-    )
-    const payload = JSON.parse(jsonPayload)
-    if (!payload || typeof payload !== 'object') return null
-
-    const userId = Number(payload.user_id || payload.id || payload.sub || 1)
-    const email = String(payload.email || payload.user_email || '')
-    const username = String(payload.username || (email ? email.split('@')[0] : ''))
-    const firstName = String(payload.first_name || payload.firstName || '')
-    const lastName = String(payload.last_name || payload.lastName || '')
-    const role = String(payload.role || payload.role_name || payload.designation || '')
-
-    return {
-      id: Number.isFinite(userId) ? userId : 1,
-      email: email || 'user@bomach.com',
-      username: username || 'user',
-      first_name: firstName || undefined,
-      last_name: lastName || undefined,
-      is_verified: true,
-      created_at: new Date().toISOString(),
-      role: role || undefined,
+    if (parts.length >= 2) {
+      const base64Url = parts[1]
+      const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split('')
+          .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+          .join('')
+      )
+      const payload = JSON.parse(jsonPayload)
+      if (payload && typeof payload === 'object') {
+        if (payload.user_id || payload.id || payload.sub) {
+          userId = Number(payload.user_id || payload.id || payload.sub)
+        }
+        if (!email && (payload.email || payload.user_email)) {
+          email = String(payload.email || payload.user_email)
+        }
+        if (!username && payload.username) {
+          username = String(payload.username)
+        }
+        if (!firstName && (payload.first_name || payload.firstName)) {
+          firstName = String(payload.first_name || payload.firstName)
+        }
+        if (!lastName && (payload.last_name || payload.lastName)) {
+          lastName = String(payload.last_name || payload.lastName)
+        }
+        if (!role && (payload.role || payload.role_name || payload.designation)) {
+          role = String(payload.role || payload.role_name || payload.designation)
+        }
+      }
     }
   } catch {
+    // ignore
+  }
+
+  if (!email && !username && !firstName && !lastName) {
     return null
+  }
+
+  return {
+    id: Number.isFinite(userId) ? userId : 1,
+    email: email || 'user@bomach.com',
+    username: username || (firstName ? firstName.toLowerCase() : 'user'),
+    first_name: firstName || undefined,
+    last_name: lastName || undefined,
+    is_verified: true,
+    created_at: new Date().toISOString(),
+    role: role || undefined,
   }
 }
 
@@ -385,7 +423,7 @@ function userFromToken(token: string): UserProfile | null {
             setRefreshToken(refreshTokenFromUrl)
           }
 
-          const tokenProfile = userFromToken(tokenFromUrl)
+          const tokenProfile = userFromToken(tokenFromUrl, searchParams)
           if (tokenProfile) {
             setUser(tokenProfile)
           }

@@ -4,7 +4,6 @@ import Skeleton, { SkeletonTheme } from "react-loading-skeleton";
 import { useStore } from "../../context/StoreContext";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
-import { ROLES } from "../../data/defaults";
 import {
   workdeskService,
   type DashboardSummaryResponse,
@@ -119,18 +118,20 @@ export function WorkdeskPage() {
   const [isLoadingWorkdesk, setIsLoadingWorkdesk] = useState(true);
   const [apiError, setApiError] = useState("");
 
-  const roleLabel =
+  const userFullName =
     summaryData?.full_name && summaryData.full_name.trim()
       ? summaryData.full_name.trim()
-      : user
-        ? (user.first_name || "").trim() || (user.last_name || "").trim()
-          ? `${user.first_name || ""} ${user.last_name || ""}`.trim()
-          : user.username && user.username.trim()
-            ? user.username.trim()
-            : user.email
-              ? user.email.split("@")[0]
-              : ROLES[activeRole as keyof typeof ROLES]?.n || "User"
-        : ROLES[activeRole as keyof typeof ROLES]?.n || "User";
+      : [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim()
+        ? [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim()
+        : user?.username && user?.username.trim() && user?.username !== "user"
+          ? user?.username.trim()
+          : employeeDetails?.full_name && employeeDetails.full_name.trim()
+            ? employeeDetails.full_name.trim()
+            : user?.email && user?.email !== "user@bomach.com"
+              ? user?.email.split("@")[0]
+              : "User";
+
+  const roleLabel = userFullName;
 
   const roleTitle =
     summaryData?.job_title ||
@@ -139,7 +140,7 @@ export function WorkdeskPage() {
     employeeDetails?.position ||
     employeeDetails?.designation ||
     user?.role ||
-    "Team Member";
+    ((user as any)?.is_superuser ? "CEO & Founder" : "Staff");
 
   // Fetch real Work Desk data strictly from backend endpoints
   const loadWorkdeskData = useCallback(async () => {
