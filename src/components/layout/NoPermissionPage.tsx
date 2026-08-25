@@ -1,12 +1,11 @@
 import { useNavigate } from '@tanstack/react-router'
-import { useEffect } from 'react'
 import { AppIcon } from '../shared/AppIcon'
 import { useAuth } from '../../context/AuthContext'
 import { screenTitleFromPath } from '../../navigation'
 
 export default function NoPermissionPage({ screen }: { screen: string }) {
   const navigate = useNavigate()
-  const { userRole, currentRole, employeeDetails, getFirstAccessibleScreen, hasPermission, denyScreenAccess } = useAuth()
+  const { userRole, currentRole, employeeDetails, getFirstAccessibleScreen, hasPermission } = useAuth()
   const roleDisplay =
     employeeDetails?.role_name ||
     employeeDetails?.designation ||
@@ -18,11 +17,6 @@ export default function NoPermissionPage({ screen }: { screen: string }) {
   const firstAllowedTitle = screenTitleFromPath(firstAllowedScreen)
   const canOpenFirstAllowed = firstAllowedScreen !== screen && hasPermission(firstAllowedScreen, 'view')
   const canOpenDashboard = hasPermission('dashboard', 'view')
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => denyScreenAccess(screen), 0)
-    return () => window.clearTimeout(timer)
-  }, [denyScreenAccess, screen])
 
   return (
     <div className="flex min-h-[calc(100vh-4rem)] w-full items-center justify-center p-6 bg-bg">

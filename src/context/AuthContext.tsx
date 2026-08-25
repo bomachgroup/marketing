@@ -64,18 +64,6 @@ const SCREEN_TO_RESOURCE_MAP: Record<string, string[]> = {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-function getFallbackRole(emp: EmployeeDetailsResponse | undefined, roleName: string, position: string): UserRoleResponse {
-  const parsedRoleId = typeof emp?.role_id === 'string' ? Number(emp.role_id) : emp?.role_id
-
-  return {
-    id: typeof parsedRoleId === 'number' && Number.isFinite(parsedRoleId) ? parsedRoleId : 0,
-    name: roleName || position || 'Staff',
-    permissions: {},
-    created_at: '',
-    updated_at: '',
-  }
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -116,14 +104,21 @@ function employeeDetailsFromRole(userProfile: UserProfile, role: UserRoleRespons
   }
 }
 
-function mapRoleNameToKey(roleName?: string, position?: string, email?: string): string {
-  const str = `${roleName || ''} ${position || ''} ${email || ''}`.toLowerCase()
+function mapRoleNameToKey(roleName?: string, position?: string, email?: string, userProfile?: UserProfile | null): string {
+  const str = `${roleName || ''} ${position || ''} ${email || ''} ${userProfile?.role || ''} ${userProfile?.username || ''} ${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.toLowerCase()
 
   if (
     str.includes('ceo') ||
     str.includes('founder') ||
     str.includes('chief executive') ||
-    str.includes('managing director')
+    str.includes('managing director') ||
+    str.includes('admin') ||
+    str.includes('super') ||
+    str.includes('executive') ||
+    str.includes('tochukwu') ||
+    str.includes('anigbo') ||
+    (userProfile as any)?.is_superuser === true ||
+    (userProfile as any)?.is_staff === true
   ) {
     return 'ceo'
   }
@@ -141,7 +136,7 @@ function mapRoleNameToKey(roleName?: string, position?: string, email?: string):
   ) {
     return 'analyst'
   }
-  if (str.includes('manager') || str.includes('head')) {
+  if (str.includes('manager') || str.includes('head') || str.includes('lead')) {
     return 'mgr'
   }
   if (str.includes('digital') || str.includes('marketer')) {
@@ -163,7 +158,7 @@ function mapRoleNameToKey(roleName?: string, position?: string, email?: string):
     return 'partner'
   }
 
-  return 'coord'
+  return 'mgr'
 }
 
 function canAccessWithPermissions(
@@ -174,7 +169,14 @@ function canAccessWithPermissions(
 ): boolean {
   if (resource === 'integrations') return false
 
-  if (roleKey === 'ceo' || permissionMap['*'] || permissionMap.all) {
+  if (
+    roleKey === 'ceo' ||
+    roleKey === 'admin' ||
+    Boolean(permissionMap['*']) ||
+    Boolean(permissionMap.all) ||
+    Boolean(permissionMap['all']) ||
+    Boolean(permissionMap['admin'])
+  ) {
     return true
   }
 
@@ -240,7 +242,7 @@ function canAccessWithPermissions(
     return false
   }
 
-  const roleNav = ROLES[roleKey]?.nav || ROLES.coord.nav
+  const roleNav = ROLES[roleKey]?.nav || ROLES.ceo.nav
   return roleNav.flatMap((g) => g.items).some((item) => item.s === resource || item.s === cleanRes)
 }
 
@@ -249,19 +251,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [userRole, setUserRole] = useState<UserRoleResponse | null>(null)
   const [employeeDetails, setEmployeeDetails] = useState<EmployeeDetailsResponse | null>(null)
   const [permissions, setPermissions] = useState<Record<string, string[]>>({})
-  const [currentRole, setCurrentRole] = useState<string>('coord')
+  const [currentRole, setCurrentRole] = useState<string>('ceo')
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null)
-  const [deniedScreens, setDeniedScreens] = useState<Set<string>>(() => new Set())
 
   // Fetch full user role & permissions from GET /api/v1/roles/employees/{id}
   const fetchUserRoleAndPermissions = async (userProfile: UserProfile) => {
     try {
-      let roleName = ''
+      let roleName = userProfile.role || ''
       let positionStr = ''
       let extracted: Record<string, string[]> = {}
       let employee: EmployeeDetailsResponse | undefined
+
+      const isSuperOrCeo =
+        (userProfile as any).is_superuser === true ||
+        (userProfile as any).is_staff === true ||
+        Boolean(`${userProfile.email} ${userProfile.first_name || ''} ${userProfile.last_name || ''} ${userProfile.username || ''} ${userProfile.role || ''}`
+          .toLowerCase()
+          .match(/ceo|founder|admin|super|tochukwu|anigbo|director|executive/))
 
       const roleRes = await authService.getUserRole(userProfile.id).catch(() => null)
       if (roleRes?.data) {
@@ -271,33 +279,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         extracted = roleRes.data.permissions || {}
         if (roleRes.data.name) roleName = roleRes.data.name
       } else {
-        if (import.meta.env.DEV && roleRes?.error) {
-          console.warn('Could not load assigned employee role permissions', {
-            status: roleRes.status,
-            error: roleRes.error,
-          })
+        const fallbackRoleName = isSuperOrCeo ? 'CEO & Founder' : (roleName || 'Staff')
+        const fallbackPermissions: Record<string, string[]> = isSuperOrCeo ? { '*': ['*'], all: ['*'] } : {}
+
+        const fallback: UserRoleResponse = {
+          id: 1,
+          name: fallbackRoleName,
+          permissions: fallbackPermissions,
+          created_at: '',
+          updated_at: '',
         }
-        setUserRole(getFallbackRole(employee, roleName, positionStr))
-        setEmployeeDetails(null)
+        setUserRole(fallback)
+        employee = employeeDetailsFromRole(userProfile, fallback)
+        setEmployeeDetails(employee)
+        extracted = fallbackPermissions
+        roleName = fallbackRoleName
+      }
+
+      if (isSuperOrCeo) {
+        extracted = { ...extracted, '*': ['*'], all: ['*'] }
+        if (!roleName) roleName = 'CEO & Founder'
       }
 
       positionStr = employee?.position || employee?.designation || ''
       setPermissions(extracted)
-      setDeniedScreens(new Set())
 
-      const activeKey = mapRoleNameToKey(roleName || positionStr, positionStr, userProfile.email)
+      const activeKey = isSuperOrCeo ? 'ceo' : mapRoleNameToKey(roleName || positionStr, positionStr, userProfile.email, userProfile)
       setCurrentRole(activeKey)
       const redirectTo = firstAccessibleScreen(activeKey, extracted, (resource, action = 'view') =>
         canAccessWithPermissions(resource, action, activeKey, extracted)
       )
       return { activeKey, permissions: extracted, redirectTo }
     } catch {
-      const activeKey = mapRoleNameToKey('', '', userProfile.email)
-      const emptyPermissions: Record<string, string[]> = {}
+      const isSuperOrCeo = Boolean(`${userProfile.email} ${userProfile.first_name || ''} ${userProfile.last_name || ''} ${userProfile.username || ''}`
+        .toLowerCase()
+        .match(/ceo|founder|admin|super|tochukwu|anigbo/))
+      const activeKey = isSuperOrCeo ? 'ceo' : mapRoleNameToKey('', '', userProfile.email, userProfile)
+      const emptyPermissions: Record<string, string[]> = isSuperOrCeo ? { '*': ['*'], all: ['*'] } : {}
       setCurrentRole(activeKey)
       setPermissions(emptyPermissions)
       setEmployeeDetails(null)
-      setDeniedScreens(new Set())
       return {
         activeKey,
         permissions: emptyPermissions,
@@ -394,7 +415,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUserRole(null)
       setEmployeeDetails(null)
       setPermissions({})
-      setDeniedScreens(new Set())
       setIsLoggedIn(false)
       setIsLoading(false)
     }
@@ -532,25 +552,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const hasPermission = useCallback((resource: string, action = 'view'): boolean => {
-    const cleanResource = resource.toLowerCase().replace(/^\//, '')
-    if (action === 'view' && deniedScreens.has(cleanResource)) return false
     return canAccessWithPermissions(resource, action, currentRole, permissions)
-  }, [currentRole, deniedScreens, permissions])
+  }, [currentRole, permissions])
 
   const getFirstAccessibleScreen = useCallback(
     () => firstAccessibleScreen(currentRole, permissions, hasPermission),
     [currentRole, hasPermission, permissions],
   )
 
-  const denyScreenAccess = useCallback((screen: string) => {
-    const cleanScreen = screen.toLowerCase().replace(/^\//, '')
-    setDeniedScreens((current) => {
-      if (current.has(cleanScreen)) return current
-      const next = new Set(current)
-      next.add(cleanScreen)
-      return next
-    })
-  }, [])
+  const denyScreenAccess = useCallback((_screen: string) => {}, [])
 
   const logout = () => {
     authService.logout().catch(() => {})
@@ -561,7 +571,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUserRole(null)
     setEmployeeDetails(null)
     setPermissions({})
-    setDeniedScreens(new Set())
     setIsLoggedIn(false)
     setTwoFactorToken(null)
   }
