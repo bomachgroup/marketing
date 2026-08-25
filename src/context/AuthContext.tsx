@@ -329,7 +329,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-function userFromToken(token: string, searchParams?: URLSearchParams): UserProfile | null {
+function userFromToken(token: string, searchParams?: URLSearchParams): UserProfile {
   let userId = 1
   let email = ''
   let username = ''
@@ -388,12 +388,8 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
     // ignore
   }
 
-  if (!email && !username && !firstName && !lastName) {
-    return null
-  }
-
   return {
-    id: Number.isFinite(userId) ? userId : 1,
+    id: Number.isFinite(userId) && userId > 0 ? userId : 1,
     email: email || 'user@bomach.com',
     username: username || (firstName ? firstName.toLowerCase() : 'user'),
     first_name: firstName || undefined,
@@ -415,22 +411,24 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
       const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
       const tokenFromUrl = searchParams.get('token') || searchParams.get('access_token') || getAccessToken()
       const refreshTokenFromUrl = searchParams.get('refresh_token') || searchParams.get('refreshToken') || getRefreshToken()
+      const isEmbed = searchParams.get('embed') === 'true' || searchParams.get('embedded') === 'true' || Boolean(tokenFromUrl)
 
-      if (tokenFromUrl) {
+      if (tokenFromUrl || isEmbed) {
         try {
-          setAccessToken(tokenFromUrl)
-          if (refreshTokenFromUrl) {
-            setRefreshToken(refreshTokenFromUrl)
+          if (tokenFromUrl) {
+            setAccessToken(tokenFromUrl)
+            if (refreshTokenFromUrl) {
+              setRefreshToken(refreshTokenFromUrl)
+            }
           }
 
-          const tokenProfile = userFromToken(tokenFromUrl, searchParams)
-          if (tokenProfile) {
-            setUser(tokenProfile)
-          }
+          const tokenProfile = userFromToken(tokenFromUrl || '', searchParams)
+          setUser(tokenProfile)
+          setIsLoggedIn(true)
 
           const res = await Promise.race([
             authService.getCurrentUser(),
-            new Promise<{ data?: UserProfile }>((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 5000)),
+            new Promise<{ data?: UserProfile }>((_, reject) => setTimeout(() => reject(new Error('Auth timeout')), 4000)),
           ]).catch(() => null)
 
           if (isCancelled) return
@@ -440,15 +438,21 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
             ? { ...tokenProfile, ...userObj }
             : tokenProfile
 
-          if (effectiveUser) {
-            setUser(effectiveUser)
+          setUser(effectiveUser)
+          setIsLoggedIn(true)
+          await fetchUserRoleAndPermissions(effectiveUser)
+          setIsLoading(false)
+          return
+        } catch (err) {
+          console.warn('Failed to authenticate with token from URL/store:', err)
+          if (isEmbed) {
+            const fallbackProfile = userFromToken(tokenFromUrl || '', searchParams)
+            setUser(fallbackProfile)
             setIsLoggedIn(true)
-            await fetchUserRoleAndPermissions(effectiveUser)
+            await fetchUserRoleAndPermissions(fallbackProfile)
             setIsLoading(false)
             return
           }
-        } catch (err) {
-          console.warn('Failed to authenticate with token from URL/store:', err)
         }
       }
 
@@ -474,7 +478,6 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
 
       if (isCancelled) return
 
-      const isEmbed = searchParams.get('embed') === 'true' || searchParams.get('embedded') === 'true' || Boolean(tokenFromUrl)
       if (!isEmbed) {
         clearAccessToken()
         clearRefreshToken()

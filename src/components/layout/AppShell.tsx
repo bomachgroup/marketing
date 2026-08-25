@@ -75,7 +75,7 @@ export default function AppShell() {
     return <AuthSkeleton />
   }
 
-  if (!isLoggedIn) {
+  if (!isLoggedIn && !isEmbed) {
     return <LoginScreen />
   }
 

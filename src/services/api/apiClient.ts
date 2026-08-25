@@ -209,8 +209,11 @@ export async function refreshAccessTokenFromCookie(): Promise<string | null> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function normalizeEndpoint(endpoint: string): string {
   const [path, query] = endpoint.split('?')
-  // Ensure trailing slash for REST routes to avoid cross-origin 301 redirects that drop Authorization headers
-  const normalizedPath = path.endsWith('/') || path.includes('.') ? path : `${path}/`
+  // Auth endpoints and files must not have trailing slashes
+  if (path.includes('/auth/') || path.includes('.')) {
+    return query ? `${path}?${query}` : path
+  }
+  const normalizedPath = path.endsWith('/') ? path : `${path}/`
   return query ? `${normalizedPath}?${query}` : normalizedPath
 }
 
