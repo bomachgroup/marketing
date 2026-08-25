@@ -2,6 +2,7 @@
 import { createContext, useCallback, useContext, useState, useEffect, type ReactNode } from 'react'
 import { authService, type UserProfile, type UserRoleResponse, type EmployeeDetailsResponse } from '../services/api/authService'
 import { clearAccessToken, clearLegacyStoredTokens, clearRefreshToken, getAccessToken, getRefreshToken, setAccessToken, setRefreshToken } from '../services/api/authTokenStore'
+import { setApiBaseUrl } from '../services/api/apiClient'
 import { ROLES } from '../data/defaults'
 import { firstAccessibleScreen } from '../navigation'
 
@@ -411,6 +412,10 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
       const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
       const tokenFromUrl = searchParams.get('token') || searchParams.get('access_token') || getAccessToken()
       const refreshTokenFromUrl = searchParams.get('refresh_token') || searchParams.get('refreshToken') || getRefreshToken()
+      const backendUrlFromUrl = searchParams.get('apiBaseUrl') || searchParams.get('backendUrl') || searchParams.get('apiUrl')
+      if (backendUrlFromUrl) {
+        setApiBaseUrl(backendUrlFromUrl)
+      }
       const isEmbed = searchParams.get('embed') === 'true' || searchParams.get('embedded') === 'true' || Boolean(tokenFromUrl)
 
       if (tokenFromUrl || isEmbed) {
@@ -497,6 +502,10 @@ function userFromToken(token: string, searchParams?: URLSearchParams): UserProfi
       if (e.data && (e.data.type === 'BOMACH_AUTH_TOKEN' || e.data.type === 'SET_AUTH_TOKEN' || e.data.token)) {
         const incomingToken = String(e.data.token || e.data.accessToken || '')
         const incomingRefreshToken = e.data.refreshToken ? String(e.data.refreshToken) : incomingToken
+        const incomingApiBase = e.data.apiBaseUrl || e.data.backendUrl || e.data.apiUrl
+        if (incomingApiBase) {
+          setApiBaseUrl(String(incomingApiBase))
+        }
         if (incomingToken) {
           setAccessToken(incomingToken)
           if (incomingRefreshToken) {

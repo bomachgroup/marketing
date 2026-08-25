@@ -1,12 +1,36 @@
 import { clearAccessToken, clearRefreshToken, getAccessToken, getRefreshToken, setAccessToken } from './authTokenStore'
 
+let cachedApiBaseUrl: string | null = null
+
+export function setApiBaseUrl(url: string) {
+  if (!url) return
+  cachedApiBaseUrl = url.trim().replace(/\/+$/, '').replace(/\/api\/v1\/?$/, '')
+  try {
+    sessionStorage.setItem('bomach_api_base_url', cachedApiBaseUrl)
+  } catch {}
+}
+
 export function getApiBaseUrl(): string {
+  if (cachedApiBaseUrl) {
+    return cachedApiBaseUrl
+  }
+
   if (typeof window !== 'undefined') {
     const searchParams = new URLSearchParams(window.location.search)
     const override = searchParams.get('apiBaseUrl') || searchParams.get('backendUrl') || searchParams.get('apiUrl')
     if (override) {
-      return override.trim().replace(/\/+$/, '').replace(/\/api\/v1\/?$/, '')
+      const clean = override.trim().replace(/\/+$/, '').replace(/\/api\/v1\/?$/, '')
+      setApiBaseUrl(clean)
+      return clean
     }
+
+    try {
+      const stored = sessionStorage.getItem('bomach_api_base_url')
+      if (stored) {
+        cachedApiBaseUrl = stored
+        return stored
+      }
+    } catch {}
   }
 
   const envUrl = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim()

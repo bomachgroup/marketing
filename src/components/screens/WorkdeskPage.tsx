@@ -118,11 +118,12 @@ export function WorkdeskPage() {
   const [isLoadingWorkdesk, setIsLoadingWorkdesk] = useState(true);
   const [apiError, setApiError] = useState("");
 
+  const passedName = [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim();
   const userFullName =
-    summaryData?.full_name && summaryData.full_name.trim()
-      ? summaryData.full_name.trim()
-      : [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim()
-        ? [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim()
+    passedName && passedName !== "user" && passedName !== "Staff Member"
+      ? passedName
+      : summaryData?.full_name && summaryData.full_name.trim()
+        ? summaryData.full_name.trim()
         : user?.username && user?.username.trim() && user?.username !== "user"
           ? user?.username.trim()
           : employeeDetails?.full_name && employeeDetails.full_name.trim()
