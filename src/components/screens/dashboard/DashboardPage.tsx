@@ -29,18 +29,6 @@ type TeamRow = {
   status: string
 }
 
-type OkrRow = {
-  id: string | number
-  title: string
-  period: string
-  keyResults: Array<{
-    id: string | number
-    title: string
-    pct: number
-    color: string
-  }>
-}
-
 type AlertRow = {
   id: string
   title: string
@@ -210,29 +198,6 @@ function progressColor(pct: number) {
   return '#DC2626'
 }
 
-function transformOkrs(value: unknown): OkrRow[] {
-  return asArray(value).map((okr, index) => {
-    const data = record(okr)
-    const keyResults = asArray(data.key_results || data.krs).map((kr, krIndex) => {
-      const krData = record(kr)
-      const pct = normalizePercent(krData.progress_percentage || krData.progress || krData.percent)
-      return {
-        id: typeof krData.id === 'string' || typeof krData.id === 'number' ? krData.id : `${index}-${krIndex}`,
-        title: text(krData.title || krData.name || krData.label, `Key result ${krIndex + 1}`),
-        pct,
-        color: progressColor(pct),
-      }
-    })
-
-    return {
-      id: typeof data.id === 'string' || typeof data.id === 'number' ? data.id : `okr-${index}`,
-      title: text(data.title || data.objective || data.obj, `Objective ${index + 1}`),
-      period: [text(data.period_start), text(data.period_end)].filter(Boolean).join(' to '),
-      keyResults,
-    }
-  })
-}
-
 function transformApprovalAlerts(value: unknown): AlertRow[] {
   return asArray(value)
     .filter((item) => {
@@ -308,7 +273,6 @@ export function DashboardPage() {
   const [perfCard, setPerfCard] = useState<PerformanceCardResponse | null>(null)
   const [leads, setLeads] = useState<LeadRow[]>([])
   const [scorecardRows, setScorecardRows] = useState<unknown[]>([])
-  const [okrs, setOkrs] = useState<OkrRow[]>([])
   const [approvalAlerts, setApprovalAlerts] = useState<AlertRow[]>([])
   const [contentItems, setContentItems] = useState<unknown[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -330,7 +294,6 @@ export function DashboardPage() {
           targetRes,
           perfRes,
           scorecardRes,
-          okrRes,
           approvalsRes,
           contentRes,
         ] = await Promise.all([
@@ -340,7 +303,6 @@ export function DashboardPage() {
           marketingService.getRevenueTargetsSummary({ period }),
           workdeskService.getPerformanceCard(),
           marketingService.getActivityScorecard(),
-          marketingService.getRevenueOkrs(),
           marketingService.getApprovals(),
           marketingService.getContentBriefs(),
         ])
@@ -354,7 +316,6 @@ export function DashboardPage() {
           targetRes.error,
           perfRes.error,
           scorecardRes.error,
-          okrRes.error,
           approvalsRes.error,
           contentRes.error,
         ].filter(Boolean)
@@ -367,7 +328,6 @@ export function DashboardPage() {
         setPerfCard(perfRes.data || null)
         setLeads(asArray(leadRes.data).map(transformLead))
         setScorecardRows(asArray(scorecardRes.data))
-        setOkrs(transformOkrs(okrRes.data))
         setApprovalAlerts(transformApprovalAlerts(approvalsRes.data))
         setContentItems(asArray(contentRes.data))
       } catch (err) {
@@ -528,47 +488,16 @@ export function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <section className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-xs">
-            <div className="flex items-center justify-between border-b border-border/80 pb-2.5">
-              <h3 className="text-sm font-bold text-text">OKR progress</h3>
+          <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4 shadow-xs">
+            <div className="flex items-center justify-between border-b border-amber-200 pb-2.5">
+              <h3 className="text-sm font-bold text-text">Company OKRs unavailable</h3>
               <button type="button" onClick={() => navigate({ to: '/okrs' })} className="text-xs font-semibold text-navy hover:underline">
-                All OKRs {'->'}
+                View supported targets {'->'}
               </button>
             </div>
-
-            {isLoading ? (
-              <SkeletonList rows={4} />
-            ) : okrs.length ? (
-              <div className="space-y-3">
-                {okrs.slice(0, 3).map((okr) => (
-                  <div key={okr.id} className="space-y-2">
-                    <div>
-                      <h4 className="text-xs font-bold text-text">{okr.title}</h4>
-                      {okr.period ? <p className="mt-0.5 text-[10px] font-medium text-text-3">{okr.period}</p> : null}
-                    </div>
-                    {okr.keyResults.length ? (
-                      <div className="space-y-1.5">
-                        {okr.keyResults.slice(0, 2).map((kr) => (
-                          <div key={kr.id} className="grid grid-cols-1 items-center gap-2 text-xs sm:grid-cols-[minmax(0,1fr)_minmax(80px,1fr)_44px] sm:gap-3">
-                            <span className="truncate font-medium text-text-2">{kr.title}</span>
-                            <div className="h-1.5 overflow-hidden rounded-full bg-surface-2">
-                              <div className="h-full rounded-full" style={{ width: `${kr.pct}%`, backgroundColor: kr.color }} />
-                            </div>
-                            <span className="font-bold sm:text-right" style={{ color: kr.color }}>
-                              {kr.pct}%
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <EmptyState title="No key results" description="No key results returned for this objective." compact />
-                    )}
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="No OKRs" description="No OKRs were returned by the backend." compact />
-            )}
+            <p className="text-xs leading-relaxed text-text-2">
+              Objectives and OKRs are not available from the current backend. Use Targets &amp; progress for supported role KPIs and employee targets.
+            </p>
           </section>
 
           <section className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-xs">
