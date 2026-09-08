@@ -83,17 +83,3 @@ export function clearLegacyStoredTokens() {
   }
 }
 
-// Ingest tokens synchronously upon script load
-if (typeof window !== 'undefined') {
-  try {
-    const params = new URLSearchParams(window.location.search)
-    const urlToken = params.get('token') || params.get('access_token')
-    const urlRefreshToken = params.get('refresh_token') || params.get('refreshToken') || urlToken
-    if (urlToken) {
-      setAccessToken(urlToken)
-      if (urlRefreshToken) {
-        setRefreshToken(urlRefreshToken)
-      }
-    }
-  } catch (_) {}
-}
