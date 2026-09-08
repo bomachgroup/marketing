@@ -7,12 +7,17 @@ import type {
 } from "./performanceTypes";
 
 export class PerformanceApiError extends Error {
+  readonly status: number;
+  readonly code: "http" | "malformed";
+
   constructor(
     message: string,
-    readonly status: number,
-    readonly code: "http" | "malformed",
+    status: number,
+    code: "http" | "malformed",
   ) {
     super(message);
+    this.status = status;
+    this.code = code;
     this.name = "PerformanceApiError";
   }
 }
@@ -70,14 +75,11 @@ function roleFromPayload(value: unknown): PerformanceRole {
   if (id === undefined || !name) throw malformed("Role response is missing id or name.");
 
   const department = firstDefined(value, ["department_name", "department"]);
+  const departmentName = stringValue(department) || (isRecord(department) ? stringValue(department.name) : undefined);
   return {
     id,
     name,
-    ...(stringValue(department)
-      ? { department: stringValue(department) }
-      : isRecord(department) && stringValue(department.name)
-        ? { department: department.name }
-        : {}),
+    ...(departmentName ? { department: departmentName } : {}),
     ...(stringValue(firstDefined(value, ["description", "role_description"]))
       ? { description: stringValue(firstDefined(value, ["description", "role_description"])) }
       : {}),

@@ -34,8 +34,6 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
 
   useEffect(() => {
     let active = true;
-    setIsLoading(true);
-    setError(null);
     void Promise.all([listRoles(), getMyTargets()])
       .then(([nextRoles, nextTargets]) => {
         if (!active) return;
@@ -56,12 +54,9 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
 
   useEffect(() => {
     if (selectedRoleId === null) {
-      setRoleKpis([]);
-      setRoleTargets([]);
       return;
     }
     let active = true;
-    setIsRoleLoading(true);
     void Promise.all([getRoleKpis(selectedRoleId), getRoleTargetTemplates(selectedRoleId)])
       .then(([nextKpis, nextTargets]) => {
         if (!active) return;
@@ -78,6 +73,12 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
       active = false;
     };
   }, [selectedRoleId]);
+
+  const handleRoleChange = (roleId: string) => {
+    setError(null);
+    setIsRoleLoading(true);
+    setSelectedRoleId(roleId);
+  };
 
   return (
     <main className="flex min-h-0 flex-col gap-5 overflow-y-auto p-4 sm:p-6 md:p-8">
@@ -122,7 +123,7 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
                   Role
                   <select
                     value={selectedRoleId === null ? "" : String(selectedRoleId)}
-                    onChange={(event) => setSelectedRoleId(event.target.value)}
+                    onChange={(event) => handleRoleChange(event.target.value)}
                     className="rounded-lg border border-border bg-surface px-2 py-1.5 text-xs text-text"
                     aria-label="Performance role"
                   >
@@ -162,4 +163,3 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
     </main>
   );
 }
-
