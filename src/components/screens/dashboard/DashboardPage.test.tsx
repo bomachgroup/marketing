@@ -37,7 +37,7 @@ vi.mock("../../../services/api/workdeskService", () => ({
   },
 }));
 
-const response = (data: unknown) => ({ status: 200, data });
+const response = <T,>(data: T) => ({ status: 200, data });
 
 describe("DashboardPage performance contract", () => {
   beforeEach(() => {
@@ -50,7 +50,9 @@ describe("DashboardPage performance contract", () => {
     vi.mocked(marketingService.getRevenueOkrs).mockResolvedValue(response([]));
     vi.mocked(marketingService.getApprovals).mockResolvedValue(response([]));
     vi.mocked(marketingService.getContentBriefs).mockResolvedValue(response([]));
-    vi.mocked(workdeskService.getPerformanceCard).mockResolvedValue(response(null));
+    vi.mocked(workdeskService.getPerformanceCard).mockResolvedValue(
+      response(null as never),
+    );
   });
 
   afterEach(() => cleanup());
