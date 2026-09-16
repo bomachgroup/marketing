@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '../../context/ToastContext'
+import { useAuth } from '../../context/AuthContext'
 import { BusyLabel, Button, EmptyState, ErrorState, KCard, Modal, Select, SkeletonKanban, SkeletonKpiGrid, Table, Topbar } from '../shared'
 import { Flag, ShieldSecurity, ExportSquare } from 'iconsax-react'
 import { parseApiError } from '../../services/api/apiClient'
 import { marketingService } from '../../services/api/marketingService'
 import { teamService } from '../../services/api/teamService'
 import NoPermissionPage from '../layout/NoPermissionPage'
+import { stableFallbackId } from '../../utils/stableId'
 
 type UnknownRecord = Record<string, unknown>
 
@@ -119,6 +121,16 @@ function toEmployeeOptions(value: unknown): EmployeeOption[] {
     .filter((item) => item.value)
 }
 
+function toBranchOptions(value: unknown): Array<{ value: string; label: string }> {
+  const seen = new Set<string>()
+  return asArray(value).map((item) => record(item)).map((item) => {
+    const branch = record(item.branch)
+    const value = String(item.branch_id ?? branch.id ?? '')
+    const label = text(item.branch_name) || text(branch.name) || (value ? `Branch ${value}` : '')
+    return { value, label }
+  }).filter((item) => item.value && item.label && !seen.has(item.value) && (seen.add(item.value), true))
+}
+
 function text(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback
 }
@@ -153,7 +165,7 @@ function transformAction(value: unknown, fallbackPhase = 'standardise'): Turnaro
   const phase = normalizePhase(data.phase || fallbackPhase)
 
   return {
-    id: taskId(data.id, `action-${Math.random().toString(36).slice(2)}`),
+    id: taskId(data.id, stableFallbackId('action', data.title, data.owner, data.week)),
     title: text(data.title, 'Turnaround action'),
     owner: text(data.owner_name) || text(data.owner_text, 'Unassigned'),
     week: text(data.week_label, `Weeks ${num(data.week_start, 1)}-${num(data.week_end, 13)}`),
@@ -229,6 +241,7 @@ function firstPlanId(value: unknown) {
 
 export function TurnaroundPage() {
   const { showToast } = useToast()
+  const { user } = useAuth()
   const [period, setPeriod] = useState('This week')
   const [planDetail, setPlanDetail] = useState<UnknownRecord | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -238,13 +251,14 @@ export function TurnaroundPage() {
   const [isSavingPlan, setIsSavingPlan] = useState(false)
   const [isChangingPlanStatus, setIsChangingPlanStatus] = useState(false)
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([])
+  const [branchOptions, setBranchOptions] = useState<Array<{ value: string; label: string }>>([])
   const [planForm, setPlanForm] = useState<PlanForm>({
     id: null,
     name: '',
     startDate: todayDateValue(),
     endDate: '',
     branchId: '',
-    primaryOwnerId: '',
+    primaryOwnerId: user?.id ? String(user.id) : '',
   })
 
   const loadTurnaroundPlan = useCallback(async (showSuccess = false) => {
@@ -292,7 +306,10 @@ export function TurnaroundPage() {
     async function loadEmployees() {
       try {
         const res = await teamService.listEmployees({ is_active: true, limit: 200 })
-        if (!cancelled && res.data) setEmployeeOptions(toEmployeeOptions(res.data))
+        if (!cancelled && res.data) {
+          setEmployeeOptions(toEmployeeOptions(res.data))
+          setBranchOptions(toBranchOptions(res.data))
+        }
       } catch {
         if (!cancelled) setEmployeeOptions([])
       }
@@ -783,7 +800,7 @@ export function TurnaroundPage() {
             <label className="grid gap-1 text-xs font-semibold text-text">
               Primary owner
               <Select
-                options={[{ value: '', label: 'Unassigned' }, ...employeeOptions]}
+                options={employeeOptions}
                 value={planForm.primaryOwnerId}
                 onChange={(val) => setPlanForm((current) => ({ ...current, primaryOwnerId: val }))}
                 className="w-full"
@@ -791,13 +808,12 @@ export function TurnaroundPage() {
             </label>
 
             <label className="grid gap-1 text-xs font-semibold text-text">
-              Branch ID
-              <input
-                type="number"
+              Branch
+              <Select
+                options={branchOptions}
                 value={planForm.branchId}
-                onChange={(event) => setPlanForm((current) => ({ ...current, branchId: event.target.value }))}
-                disabled={isSavingPlan}
-                className="h-9 rounded-md border border-border bg-surface px-3 text-sm font-normal text-text outline-none focus:border-navy disabled:cursor-wait disabled:opacity-60"
+                onChange={(value) => setPlanForm((current) => ({ ...current, branchId: value }))}
+                className="w-full"
               />
             </label>
           </div>

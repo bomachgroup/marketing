@@ -102,7 +102,9 @@ export function transformBackendLeadActivity(activity: any): Activity {
   const type = activity.activity_type_display || activity.activity_type || activity.channel || activity.title || 'Activity'
   const outcome = activity.outcome_display || activity.outcome || ''
   const note = activity.note || activity.notes || activity.t || 'Activity logged'
-  const author = activity.created_by_name || activity.actor || activity.owner || 'Team member'
+  const createdBy = activity.created_by || activity.created_by_user || activity.logged_by
+  const author = activity.created_by_name || activity.actor_name || activity.actor || activity.owner_name || activity.owner ||
+    (createdBy && typeof createdBy === 'object' ? [createdBy.first_name, createdBy.last_name].filter(Boolean).join(' ') || createdBy.name || createdBy.email : createdBy) || 'Team member'
   const created = activity.created_at || activity.m || 'Just now'
   const nextAction = activity.next_action || activity.nextAction || ''
 

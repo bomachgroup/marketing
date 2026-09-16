@@ -1,18 +1,21 @@
-import { Suspense, useEffect, useRef } from 'react'
-import { Outlet, useLocation } from '@tanstack/react-router'
-import { useAuth } from '../../context/AuthContext'
-import { ShellProvider } from '../../context/ShellContext'
-import { screenTitleFromPath } from '../../navigation'
-import LoginScreen from './LoginScreen'
-import Sidebar from './Sidebar'
-import { SkeletonCard, SkeletonKpiGrid, SkeletonList } from '../shared/Skeletons'
-import { ShellTopbar } from '../shared/Topbar'
-
-import NoPermissionPage from './NoPermissionPage'
+import { Suspense, useEffect, useRef } from "react";
+import { Navigate, Outlet, useLocation } from "@tanstack/react-router";
+import { useAuth } from "../../context/AuthContext";
+import { ShellProvider } from "../../context/ShellContext";
+import { DISABLED_SCREENS, screenTitleFromPath } from "../../navigation";
+import LoginScreen from "./LoginScreen";
+import Sidebar from "./Sidebar";
+import {
+  SkeletonCard,
+  SkeletonKpiGrid,
+  SkeletonList,
+} from "../shared/Skeletons";
+import { ShellTopbar } from "../shared/Topbar";
+import NoPermissionPage from "./NoPermissionPage";
 
 function AppRouteSkeleton() {
   return (
-    <div className="min-h-full space-y-4 p-3 sm:p-5">
+    <div className="min-h-full space-y-4 bg-white p-3 sm:p-5">
       <SkeletonKpiGrid cards={4} />
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <SkeletonList rows={5} avatar />
@@ -20,63 +23,87 @@ function AppRouteSkeleton() {
       </div>
       <SkeletonCard lines={4} />
     </div>
-  )
+  );
 }
 
 function AuthSkeleton() {
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[#0F1D3A] p-4">
-      <div className="w-full max-w-sm space-y-4 rounded-2xl border border-white/10 bg-white/5 p-4 shadow-2xl">
+    <div className="flex min-h-screen w-full items-center justify-center bg-white p-4">
+      <div className="w-full max-w-sm space-y-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-md">
         <div className="flex items-center gap-3">
-          <div className="h-10 w-10 animate-pulse rounded-xl bg-white/15" />
+          <div className="h-10 w-10 animate-pulse rounded-xl bg-slate-100" />
           <div className="min-w-0 flex-1 space-y-2">
-            <div className="h-3 w-28 animate-pulse rounded-full bg-white/20" />
-            <div className="h-2.5 w-40 animate-pulse rounded-full bg-white/10" />
+            <div className="h-3 w-28 animate-pulse rounded-full bg-slate-200" />
+            <div className="h-2.5 w-40 animate-pulse rounded-full bg-slate-100" />
           </div>
         </div>
         <div className="space-y-2.5">
-          <div className="h-10 animate-pulse rounded-xl bg-white/10" />
-          <div className="h-10 animate-pulse rounded-xl bg-white/10" />
-          <div className="h-10 animate-pulse rounded-xl bg-white/20" />
+          <div className="h-10 animate-pulse rounded-xl bg-slate-100" />
+          <div className="h-10 animate-pulse rounded-xl bg-slate-100" />
+          <div className="h-10 animate-pulse rounded-xl bg-slate-200" />
         </div>
       </div>
     </div>
-  )
+  );
 }
 
 export default function AppShell() {
-  const { isLoggedIn, isLoading, hasPermission } = useAuth()
-  const location = useLocation()
-  const mainRef = useRef<HTMLElement>(null)
-  const currentScreen = location.pathname.replace(/^\//, '') || 'dashboard'
-  const canAccess = hasPermission(currentScreen, 'view')
+  const { isLoggedIn, isLoading, authError, hasPermission, getFirstAccessibleScreen } =
+    useAuth();
+  const location = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+  const currentScreen = location.pathname.replace(/^\//, "") || "dashboard";
+  const isDisabledScreen = DISABLED_SCREENS.has(currentScreen);
+  const canAccess = hasPermission(currentScreen, "view");
 
   useEffect(() => {
     if (!isLoggedIn) {
-      document.title = 'Sign in - Bomach OS'
-      return
+      document.title = "Sign in - Bomach OS";
+      return;
     }
-    document.title = screenTitleFromPath(location.pathname)
-  }, [location.pathname, isLoggedIn])
+    document.title = screenTitleFromPath(location.pathname);
+  }, [location.pathname, isLoggedIn]);
 
   useEffect(() => {
     if (mainRef.current) {
-      mainRef.current.scrollTop = 0
+      mainRef.current.scrollTop = 0;
     }
-    window.scrollTo(0, 0)
-  }, [location.pathname])
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
 
-  const searchParams = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-  const isEmbed = searchParams.get('embed') === 'true' || searchParams.get('embedded') === 'true' || Boolean(searchParams.get('token')) || Boolean(searchParams.get('access_token'))
-  const hideSidebar = isEmbed || searchParams.get('hideSidebar') === 'true' || searchParams.get('hide_sidebar') === 'true'
-  const hideTopbar = searchParams.get('hideTopbar') === 'true' || searchParams.get('hide_topbar') === 'true'
+  const searchParams = new URLSearchParams(
+    typeof window !== "undefined" ? window.location.search : "",
+  );
+  const isEmbed =
+    searchParams.get("embed") === "true" ||
+    searchParams.get("embedded") === "true";
+  const hideSidebar =
+    isEmbed ||
+    searchParams.get("hideSidebar") === "true" ||
+    searchParams.get("hide_sidebar") === "true";
+  const hideTopbar =
+    isEmbed ||
+    searchParams.get("hideTopbar") === "true" ||
+    searchParams.get("hide_topbar") === "true";
 
   if (isLoading) {
-    return <AuthSkeleton />
+    return <AuthSkeleton />;
   }
 
   if (!isLoggedIn && !isEmbed) {
-    return <LoginScreen />
+    return <LoginScreen />;
+  }
+
+  if (!isLoggedIn && isEmbed && authError) {
+    return (
+      <div role="alert" className="flex min-h-screen items-center justify-center bg-white p-6 text-center text-sm font-semibold text-red-800">
+        {authError}
+      </div>
+    );
+  }
+
+  if (isDisabledScreen) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return (
@@ -85,14 +112,24 @@ export default function AppShell() {
         {!hideSidebar && <Sidebar />}
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {!hideTopbar && <ShellTopbar fallbackTitle={screenTitleFromPath(location.pathname)} />}
-          <main ref={mainRef} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+          {!hideTopbar && (
+            <ShellTopbar
+              fallbackTitle={screenTitleFromPath(location.pathname)}
+            />
+          )}
+          <main
+            ref={mainRef}
+            className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+          >
             {!canAccess ? (
-              <NoPermissionPage screen={currentScreen} />
+              getFirstAccessibleScreen() !== currentScreen &&
+              hasPermission(getFirstAccessibleScreen(), "view") ? (
+                <Navigate to={`/${getFirstAccessibleScreen()}` as never} replace />
+              ) : (
+                <NoPermissionPage screen={currentScreen} />
+              )
             ) : (
-              <Suspense
-                fallback={<AppRouteSkeleton />}
-              >
+              <Suspense fallback={<AppRouteSkeleton />}>
                 <Outlet />
               </Suspense>
             )}
@@ -100,5 +137,5 @@ export default function AppShell() {
         </div>
       </div>
     </ShellProvider>
-  )
+  );
 }

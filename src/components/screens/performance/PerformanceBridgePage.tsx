@@ -11,6 +11,8 @@ import type {
   PerformanceTarget,
   PerformanceTargetProgress,
 } from "../../../services/api/performanceTypes";
+import { parseApiError } from "../../../services/api/apiClient";
+import { workdeskService } from "../../../services/api/workdeskService";
 
 type PerformanceBridgePageProps = {
   canManage: boolean;
@@ -31,6 +33,8 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
   const [isLoading, setIsLoading] = useState(true);
   const [isRoleLoading, setIsRoleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [evidenceDrafts, setEvidenceDrafts] = useState<Record<string, string>>({});
+  const [evidenceState, setEvidenceState] = useState<Record<string, { status: "idle" | "submitting" | "success" | "error"; message?: string }>>({});
 
   useEffect(() => {
     let active = true;
@@ -78,6 +82,53 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
     setError(null);
     setIsRoleLoading(true);
     setSelectedRoleId(roleId);
+  };
+
+  const handleEvidenceSubmit = async (target: PerformanceTargetProgress) => {
+    const targetKey = String(target.id);
+    const summary = evidenceDrafts[targetKey]?.trim() || "";
+    if (!summary) {
+      setEvidenceState((current) => ({
+        ...current,
+        [targetKey]: { status: "error", message: "Evidence summary is required." },
+      }));
+      return;
+    }
+
+    const targetId = Number(target.id);
+    if (!Number.isInteger(targetId)) {
+      setEvidenceState((current) => ({
+        ...current,
+        [targetKey]: { status: "error", message: "This target cannot accept evidence until it has a valid backend ID." },
+      }));
+      return;
+    }
+
+    const progressValue = target.actualValue ?? target.achievementPercent ?? 0;
+    setEvidenceState((current) => ({
+      ...current,
+      [targetKey]: { status: "submitting" },
+    }));
+
+    const result = await workdeskService.createTargetReport({
+      employee_target_id: targetId,
+      summary,
+      progress_value: progressValue,
+    });
+
+    if (result.error || result.status < 200 || result.status >= 300) {
+      setEvidenceState((current) => ({
+        ...current,
+        [targetKey]: { status: "error", message: parseApiError(result.error || `Evidence submission failed (${result.status}).`) },
+      }));
+      return;
+    }
+
+    setEvidenceDrafts((current) => ({ ...current, [targetKey]: "" }));
+    setEvidenceState((current) => ({
+      ...current,
+      [targetKey]: { status: "success", message: `Evidence submitted for ${target.name}.` },
+    }));
   };
 
   return (
@@ -150,7 +201,41 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
                   <article key={target.id} className="rounded-xl border border-border bg-surface-1 p-4">
                     <h3 className="text-sm font-bold text-text">{target.name}</h3>
                     <p className="mt-2 text-lg font-extrabold text-navy">{formatProgress(target)}</p>
-                    {target.evidenceAvailable === false ? <p className="mt-1 text-xs text-text-3">Evidence unavailable</p> : null}
+                    <div className="mt-2 space-y-1 text-xs text-text-3">
+                      {target.period ? <p>Period: {target.period}</p> : null}
+                      {target.periodStart || target.periodEnd ? <p>Window: {target.periodStart || "—"} to {target.periodEnd || "—"}</p> : null}
+                      {target.actualValue !== undefined && target.targetValue !== undefined ? <p>Actual: {target.actualValue} / {target.targetValue}{target.unit ? ` ${target.unit}` : ""}</p> : null}
+                      {target.evidenceRef ? <p>Evidence: {target.evidenceRef}</p> : null}
+                      {target.evidenceAvailable === false ? <p>Evidence unavailable</p> : null}
+                    </div>
+                    <div className="mt-4 border-t border-border/70 pt-3">
+                      <label className="text-[11px] font-bold text-text-2" htmlFor={`evidence-${target.id}`}>
+                        Marketing evidence
+                      </label>
+                      <textarea
+                        id={`evidence-${target.id}`}
+                        aria-label={`Evidence summary for ${target.name}`}
+                        value={evidenceDrafts[String(target.id)] || ""}
+                        onChange={(event) => setEvidenceDrafts((current) => ({ ...current, [String(target.id)]: event.target.value }))}
+                        placeholder="Describe the campaign, lead, revenue or delivery evidence..."
+                        className="mt-1 min-h-20 w-full resize-y rounded-lg border border-border bg-surface p-2 text-xs text-text outline-none placeholder:text-text-3 focus:border-navy focus:ring-1 focus:ring-navy/20"
+                        disabled={evidenceState[String(target.id)]?.status === "submitting"}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleEvidenceSubmit(target)}
+                        disabled={evidenceState[String(target.id)]?.status === "submitting"}
+                        className="mt-2 rounded-lg bg-navy px-3 py-1.5 text-[11px] font-bold text-white disabled:cursor-wait disabled:opacity-50"
+                        aria-label={`Submit evidence for ${target.name}`}
+                      >
+                        {evidenceState[String(target.id)]?.status === "submitting" ? "Submitting…" : "Submit evidence"}
+                      </button>
+                      {evidenceState[String(target.id)]?.message ? (
+                        <p className={`mt-2 text-[11px] font-semibold ${evidenceState[String(target.id)]?.status === "error" ? "text-red-700" : "text-emerald-700"}`} role={evidenceState[String(target.id)]?.status === "error" ? "alert" : undefined}>
+                          {evidenceState[String(target.id)]?.message}
+                        </p>
+                      ) : null}
+                    </div>
                   </article>
                 ))}
               </div>

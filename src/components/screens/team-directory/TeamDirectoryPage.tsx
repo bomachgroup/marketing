@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { EmptyState, ErrorState, Modal, SkeletonDetail, SkeletonKpiGrid, SkeletonList, Topbar } from '../../shared'
+import { useEffect, useMemo, useState } from 'react'
+import { EmptyState, ErrorState, Modal, Select, SkeletonDetail, SkeletonKpiGrid, SkeletonList, Topbar } from '../../shared'
 import { parseApiError } from '../../../services/api/apiClient'
 import { teamService } from '../../../services/api/teamService'
 import { transformTeamDirectory, type TeamDirectoryData, type TeamDirectoryMember } from '../../../services/transformers/teamTransformers'
@@ -40,6 +40,7 @@ export function TeamDirectoryPage() {
   const [apiError, setApiError] = useState('')
   const [selectedMember, setSelectedMember] = useState<TeamDirectoryMember | null>(null)
   const [employeeDetail, setEmployeeDetail] = useState<EmployeeDetail | null>(null)
+  const [departmentFilter, setDepartmentFilter] = useState('all')
 
   async function loadDirectory() {
     setIsLoading(true)
@@ -51,9 +52,8 @@ export function TeamDirectoryPage() {
         teamService.listUnits({ limit: 100 }),
       ])
 
-      const errors = [employeeRes.error, departmentRes.error, unitRes.error].filter(Boolean)
-      if (errors.length > 0) {
-        setApiError(parseApiError(errors.join(' ')))
+      if (employeeRes.error) {
+        setApiError(parseApiError(employeeRes.error))
       }
 
       setDirectory(transformTeamDirectory(employeeRes.data, departmentRes.data, unitRes.data))
@@ -70,6 +70,10 @@ export function TeamDirectoryPage() {
   }, [])
 
   const { members, summary } = directory
+  const departments = useMemo(() => Array.from(new Set(members.map((member) => member.meta.split(' · ')[0]).filter(Boolean))).sort(), [members])
+  const visibleMembers = departmentFilter === 'all'
+    ? members
+    : members.filter((member) => member.meta.split(' · ')[0] === departmentFilter)
 
   async function openEmployeeDetail(member: TeamDirectoryMember) {
     setSelectedMember(member)
@@ -111,8 +115,19 @@ export function TeamDirectoryPage() {
         ) : members.length === 0 ? (
           <EmptyState title="No team members" description="No backend team members were returned." icon="ti-users" />
         ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
-            {members.map((member) => (
+          <>
+            <div className="mb-3 flex max-w-xs items-center gap-2">
+              <Select
+                options={[{ value: 'all', label: 'All departments' }, ...departments.map((department) => ({ value: department, label: department }))]}
+                value={departmentFilter}
+                onChange={setDepartmentFilter}
+                className="w-full"
+              />
+            </div>
+            {visibleMembers.length === 0 ? (
+              <EmptyState title="No members in this department" description="Choose another department filter." icon="ti-users" compact />
+            ) : <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {visibleMembers.map((member) => (
               <button
                 type="button"
                 key={member.id}
@@ -137,7 +152,8 @@ export function TeamDirectoryPage() {
                 </div>
               </button>
             ))}
-          </div>
+            </div>}
+          </>
         )}
       </div>
 

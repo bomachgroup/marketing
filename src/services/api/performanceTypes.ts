@@ -29,7 +29,10 @@ export type PerformanceTarget = {
 
 export type PerformanceTargetProgress = PerformanceTarget & {
   period?: string;
+  periodStart?: string;
+  periodEnd?: string;
   actualValue?: number;
   achievementPercent?: number;
   evidenceAvailable?: boolean;
+  evidenceRef?: string;
 };

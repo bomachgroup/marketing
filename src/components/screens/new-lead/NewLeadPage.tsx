@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { BusyLabel, InlineState, ModalDialog, SkeletonField, Topbar, Select } from '../../shared'
 import { AppIcon } from '../../shared/AppIcon'
 import { useStore } from '../../../context/StoreContext'
+import { useAuth } from '../../../context/AuthContext'
 import { useToast } from '../../../context/ToastContext'
 import { parseApiError } from '../../../services/api/apiClient'
 import { marketingService } from '../../../services/api/marketingService'
@@ -74,6 +75,7 @@ export function NewLeadPage() {
   const navigate = useNavigate()
   const { leads, setLeads } = useStore()
   const { showToast } = useToast()
+  const { user } = useAuth()
 
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
@@ -82,13 +84,15 @@ export function NewLeadPage() {
   const [source, setSource] = useState('other')
   const [campaign, setCampaign] = useState('none')
   const [budget, setBudget] = useState('')
-  const [assignedToId, setAssignedToId] = useState('')
+  const [assignedToId, setAssignedToId] = useState(() => user?.id ? String(user.id) : '')
   const [notes, setNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [assignees, setAssignees] = useState<EmployeeOption[]>([])
   const [campaignOptions, setCampaignOptions] = useState<CampaignOption[]>([])
   const [lookupError, setLookupError] = useState('')
   const [isLoadingLookups, setIsLoadingLookups] = useState(true)
+
+  const eligibleAssignees = assignees.filter((employee) => /sales|marketing/i.test(employee.sublabel))
 
   const [modalConfig, setModalConfig] = useState<{
     isOpen: boolean
@@ -119,6 +123,7 @@ export function NewLeadPage() {
 
   useEffect(() => {
     let alive = true
+
 
     async function loadLookups() {
       setIsLoadingLookups(true)
@@ -160,6 +165,11 @@ export function NewLeadPage() {
     if (!phone.trim()) {
       showToast('Please enter the phone number', 'error')
       openModal('Missing Phone Number', 'Please enter the client phone number before registering.', 'warning')
+      return
+    }
+
+    if (!assignedToId) {
+      showToast('Please assign the lead to a Sales or Marketing team member', 'error')
       return
     }
 
@@ -350,10 +360,9 @@ export function NewLeadPage() {
                   ) : (
                     <Select
                       options={[
-                        { value: '', label: 'Unassigned', icon: 'people' },
-                        ...assignees.map((emp) => ({ value: String(emp.id), label: `${emp.label} (${emp.sublabel})`, icon: 'people' })),
+                        ...eligibleAssignees.map((emp) => ({ value: String(emp.id), label: `${emp.label} (${emp.sublabel})`, icon: 'people' })),
                       ]}
-                      value={assignedToId}
+                      value={assignedToId || (user?.id ? String(user.id) : '')}
                       onChange={setAssignedToId}
                       className="w-full"
                     />

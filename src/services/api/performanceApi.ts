@@ -139,17 +139,23 @@ function progressFromPayload(value: unknown): PerformanceTargetProgress {
   if (!isRecord(value)) throw malformed("Target progress response contained an invalid item.");
   const target = targetFromPayload(value);
   const period = stringValue(firstDefined(value, ["period", "period_name"]));
+  const periodStart = stringValue(firstDefined(value, ["period_start", "periodStart"]));
+  const periodEnd = stringValue(firstDefined(value, ["period_end", "periodEnd"]));
   const actualValue = numberValue(firstDefined(value, ["actual_value", "actualValue", "actual"]));
   const achievementPercent = numberValue(firstDefined(value, ["achievement_percent", "achievementPercent", "completion_percent"]));
   const evidenceAvailable = typeof value.evidence_available === "boolean"
     ? value.evidence_available
     : typeof value.evidenceAvailable === "boolean" ? value.evidenceAvailable : undefined;
+  const evidenceRef = stringValue(firstDefined(value, ["evidence_ref", "evidenceRef"]));
   return {
     ...target,
     ...(period ? { period } : {}),
+    ...(periodStart ? { periodStart } : {}),
+    ...(periodEnd ? { periodEnd } : {}),
     ...(actualValue !== undefined ? { actualValue } : {}),
     ...(achievementPercent !== undefined ? { achievementPercent } : {}),
     ...(evidenceAvailable !== undefined ? { evidenceAvailable } : {}),
+    ...(evidenceRef ? { evidenceRef } : {}),
   };
 }
 

@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useToast } from '../../../context/ToastContext'
+import { useAuth } from '../../../context/AuthContext'
 import { BusyLabel, KCard, Card, EmptyState, ErrorState, Pill, SkeletonKpiGrid, SkeletonList, Table, Modal, Button, Select, Topbar } from '../../shared'
 import { parseApiError } from '../../../services/api/apiClient'
 import { marketingService } from '../../../services/api/marketingService'
 import { teamService } from '../../../services/api/teamService'
 import { pluralize, pluralizeNoun, sanitizePluralText } from '../../../utils/formatters'
+import { stableFallbackId } from '../../../utils/stableId'
 
 type UnknownRecord = Record<string, unknown>
 type TableRow = Record<string, string | number>
@@ -87,6 +89,16 @@ function toEmployeeOptions(value: unknown): EmployeeOption[] {
     .filter((item) => item.value)
 }
 
+function toBranchOptions(value: unknown): Array<{ value: string; label: string }> {
+  const seen = new Set<string>()
+  return asArray(value).map((item) => record(item)).map((item) => {
+    const branch = record(item.branch)
+    const value = String(item.branch_id ?? branch.id ?? '')
+    const label = text(item.branch_name) || text(branch.name) || (value ? `Branch ${value}` : '')
+    return { value, label }
+  }).filter((item) => item.value && item.label && !seen.has(item.value) && (seen.add(item.value), true))
+}
+
 function text(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback
 }
@@ -153,7 +165,7 @@ function transformAction(value: unknown): DailyAction {
   const dueAtRaw = text(data.due_at)
 
   return {
-    id: actionId(data.id ?? data.action_id, `action-${Math.random().toString(36).slice(2)}`),
+    id: actionId(data.id ?? data.action_id, stableFallbackId('action', data.title, data.owner_id, data.due_at)),
     title: text(data.title, 'Daily execution action'),
     description: text(data.description),
     ownerId: data.owner_id === null || data.owner_id === undefined ? null : num(data.owner_id),
@@ -173,7 +185,7 @@ function transformSpeedRow(value: unknown): TableRow {
   const data = record(value)
   const score = num(data.score)
   return {
-    id: actionId(data.lead_id, `lead-${Math.random().toString(36).slice(2)}`),
+    id: actionId(data.lead_id, stableFallbackId('lead', data.full_name, data.source)),
     lead: text(data.full_name, 'Unnamed lead'),
     source: text(data.source, '-'),
     due: formatDateTime(data.first_response_due_at),
@@ -187,7 +199,7 @@ function transformSpeedRow(value: unknown): TableRow {
 function transformScoreRow(value: unknown): TableRow {
   const data = record(value)
   return {
-    id: text(data.role, `role-${Math.random().toString(36).slice(2)}`),
+    id: text(data.role, stableFallbackId('role', data.daily_standard, data.manager_focus)),
     role: text(data.role, 'Role'),
     standard: text(data.daily_standard, '-'),
     actual: sanitizePluralText(text(data.actual, '-')),
@@ -223,6 +235,7 @@ function summarySuggestsExecutionDay(summary: UnknownRecord | null) {
 
 export function DailyExecutionPage() {
   const { showToast } = useToast()
+  const { user } = useAuth()
   const [summary, setSummary] = useState<UnknownRecord | null>(null)
   const [day, setDay] = useState<UnknownRecord | null>(null)
   const [actions, setActions] = useState<DailyAction[]>([])
@@ -240,6 +253,7 @@ export function DailyExecutionPage() {
   const [showTemplateModal, setShowTemplateModal] = useState(false)
   const [isSavingTemplate, setIsSavingTemplate] = useState(false)
   const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([])
+  const [branchOptions, setBranchOptions] = useState<Array<{ value: string; label: string }>>([])
   const [editForm, setEditForm] = useState<ActionEditForm>({
     title: '',
     description: '',
@@ -250,7 +264,7 @@ export function DailyExecutionPage() {
   const [templateForm, setTemplateForm] = useState<TemplateForm>({
     title: '',
     description: '',
-    defaultOwnerId: '',
+    defaultOwnerId: user?.id ? String(user.id) : '',
     branchId: '',
     severity: 'warning',
     isActive: true,
@@ -324,7 +338,10 @@ export function DailyExecutionPage() {
     async function loadEmployees() {
       try {
         const res = await teamService.listEmployees({ is_active: true, limit: 200 })
-        if (!cancelled && res.data) setEmployeeOptions(toEmployeeOptions(res.data))
+        if (!cancelled && res.data) {
+          setEmployeeOptions(toEmployeeOptions(res.data))
+          setBranchOptions(toBranchOptions(res.data))
+        }
       } catch {
         if (!cancelled) setEmployeeOptions([])
       }
@@ -713,7 +730,7 @@ export function DailyExecutionPage() {
             <label className="grid gap-1 text-xs font-semibold text-text">
               Default owner
               <Select
-                options={[{ value: '', label: 'Unassigned' }, ...employeeOptions]}
+                options={employeeOptions}
                 value={templateForm.defaultOwnerId}
                 onChange={(val) => setTemplateForm((current) => ({ ...current, defaultOwnerId: val }))}
                 className="w-full"
@@ -721,13 +738,12 @@ export function DailyExecutionPage() {
             </label>
 
             <label className="grid gap-1 text-xs font-semibold text-text">
-              Branch ID
-              <input
-                type="number"
+              Branch
+              <Select
+                options={branchOptions}
                 value={templateForm.branchId}
-                onChange={(event) => setTemplateForm((current) => ({ ...current, branchId: event.target.value }))}
-                disabled={isSavingTemplate}
-                className="h-9 rounded-md border border-border bg-surface px-3 text-sm font-normal text-text outline-none focus:border-navy disabled:cursor-wait disabled:opacity-60"
+                onChange={(value) => setTemplateForm((current) => ({ ...current, branchId: value }))}
+                className="w-full"
               />
             </label>
           </div>

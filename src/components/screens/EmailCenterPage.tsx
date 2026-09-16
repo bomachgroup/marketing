@@ -4,7 +4,7 @@ import {
   useState,
 } from 'react'
 import { AppIcon } from '../../components/shared/AppIcon'
-import { BusyLabel, EmptyState, ErrorState, SkeletonKpiGrid, SkeletonList, SkeletonTable, Topbar, Select } from '../shared'
+import { BusyLabel, EmptyState, ErrorState, SkeletonKpiGrid, SkeletonTable, Topbar, Select } from '../shared'
 import { useToast } from '../../context/ToastContext'
 import { marketingService } from '../../services/api/marketingService'
 import { parseApiError } from '../../services/api/apiClient'
@@ -81,22 +81,6 @@ export function EmailCenterPage() {
     filters: { period },
     manual_recipients: null,
   })
-
-  async function handlePreview() {
-    setIsSaving(true)
-    try {
-      const res = await marketingService.previewEmailCampaign(audiencePayload())
-      if (!res.data) {
-        showToast(parseApiError(res.error || 'Could not preview email audience'), 'error')
-        return
-      }
-      showToast('Email audience preview generated.', 'success')
-    } catch (err) {
-      showToast(parseApiError(err instanceof Error ? err.message : err), 'error')
-    } finally {
-      setIsSaving(false)
-    }
-  }
 
   async function handleSendCampaign() {
     if (!subject.trim() || !message.trim()) {
@@ -235,14 +219,6 @@ export function EmailCenterPage() {
               <div className="flex flex-wrap items-center gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={handlePreview}
-                  disabled={isSaving || isLoading}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-xl border border-border bg-surface text-xs font-bold text-text hover:bg-surface-1 transition-all active:scale-95 disabled:opacity-50"
-                >
-                  <AppIcon name="eye" size={14} /> Preview audience
-                </button>
-                <button
-                  type="button"
                   onClick={handleSendCampaign}
                   disabled={isSaving || isLoading}
                   className="flex items-center gap-1 px-3.5 py-1.5 rounded-xl bg-navy text-xs font-bold text-white shadow-xs hover:bg-navy-dark transition-all active:scale-95 disabled:opacity-50"
@@ -253,40 +229,6 @@ export function EmailCenterPage() {
             </div>
           </div>
 
-          <div className="bg-surface border border-border rounded-2xl p-4 shadow-xs space-y-3">
-            <div className="border-b border-border/80 pb-2">
-              <h3 className="text-sm font-bold text-text">Deliverability & consent controls</h3>
-              <p className="text-[11px] text-text-3">Operational requirements before production campaigns</p>
-            </div>
-
-            {isLoading ? (
-              <SkeletonList rows={6} />
-            ) : (
-              <div className="space-y-2.5">
-                {[
-                  'Send only to contacts with the required channel consent',
-                  'Maintain SPF, DKIM, DMARC and TLS for the sending domain',
-                  'Include one-click unsubscribe and suppression-list enforcement',
-                  'Separate transactional messages from marketing campaigns',
-                  'Monitor bounces, complaints and domain reputation',
-                  'Store template version, sender, segment and approval history',
-                ].map((title) => (
-                  <div key={title} className="flex items-start justify-between gap-3 p-2 rounded-xl border border-border/60 bg-surface-1/40">
-                    <div className="flex items-start gap-2 min-w-0">
-                      <input type="checkbox" checked={false} readOnly className="rounded border-border cursor-default shrink-0 mt-0.5" />
-                      <div className="min-w-0">
-                        <div className="text-xs font-bold text-text leading-snug">{title}</div>
-                        <div className="text-[10.5px] font-medium text-text-3 mt-0.5">No backend status endpoint</div>
-                      </div>
-                    </div>
-                    <span className="shrink-0 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10.5px] font-bold text-amber-900">
-                      Unverified
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
         </div>
 
         <div className="bg-surface border border-border rounded-2xl p-4 shadow-xs space-y-3">

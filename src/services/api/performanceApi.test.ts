@@ -108,6 +108,10 @@ describe("performance API adapter", () => {
               actual_value: 72500,
               achievement_percent: 72.5,
               evidence_available: true,
+              period: "2026-08",
+              period_start: "2026-08-01",
+              period_end: "2026-08-31",
+              evidence_ref: "campaign:CMP-2401",
             },
           ],
         }),
@@ -123,6 +127,10 @@ describe("performance API adapter", () => {
         actualValue: 72500,
         achievementPercent: 72.5,
         evidenceAvailable: true,
+        period: "2026-08",
+        periodStart: "2026-08-01",
+        periodEnd: "2026-08-31",
+        evidenceRef: "campaign:CMP-2401",
       },
     ]);
   });

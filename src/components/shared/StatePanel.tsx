@@ -120,24 +120,30 @@ export function EmptyState({ title, description, action, icon, compact = false, 
 
 export function ErrorState({ message, onRetry, compact = false, className = '' }: ErrorStateProps) {
   return (
-    <StatePanel
-      type="error"
-      title="Could not load data"
-      description={message}
-      compact={compact}
-      className={className}
-      action={
-        onRetry ? (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-50"
-          >
-            Retry
-          </button>
-        ) : undefined
-      }
-    />
+    <div
+      role="alert"
+      aria-live="polite"
+      className="pointer-events-none fixed bottom-4 left-4 right-4 z-[80] sm:left-auto sm:max-w-md"
+    >
+      <StatePanel
+        type="error"
+        title="Some data is temporarily unavailable"
+        description={message}
+        compact={compact}
+        className={`pointer-events-auto w-full shadow-lg ${className}`}
+        action={
+          onRetry ? (
+            <button
+              type="button"
+              onClick={onRetry}
+              className="rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-50"
+            >
+              Retry
+            </button>
+          ) : undefined
+        }
+      />
+    </div>
   )
 }
 

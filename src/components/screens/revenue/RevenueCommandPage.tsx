@@ -18,6 +18,7 @@ import { parseApiError } from '../../../services/api/apiClient'
 import { marketingService } from '../../../services/api/marketingService'
 import NoPermissionPage from '../../layout/NoPermissionPage'
 import { pluralize } from '../../../utils/formatters'
+import { stableFallbackId } from '../../../utils/stableId'
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -142,7 +143,7 @@ function formatDateTime(value: unknown) {
 function transformDailyAction(action: unknown): RevenueTask {
   const data = record(action)
   const owner = record(data.owner)
-  const id = revenueTaskId(data.id ?? data.action_id ?? data.uuid, `action-${Math.random().toString(36).slice(2)}`)
+  const id = revenueTaskId(data.id ?? data.action_id ?? data.uuid, stableFallbackId('action', data.title, data.owner_id, data.due_at))
   const ownerName = text(data.owner_name) || text(data.assigned_to_name) || text(owner.name)
   const due = formatDateTime(data.due_at || data.due_date)
   const description = text(data.description || data.note)

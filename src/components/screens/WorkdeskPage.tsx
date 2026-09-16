@@ -102,6 +102,12 @@ export function WorkdeskPage() {
   const { user, userRole, employeeDetails } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
+  const searchParams = new URLSearchParams(
+    typeof window !== "undefined" ? window.location.search : "",
+  );
+  const isEmbedded =
+    searchParams.get("embed") === "true" ||
+    searchParams.get("embedded") === "true";
 
   const [summaryData, setSummaryData] =
     useState<DashboardSummaryResponse | null>(null);
@@ -118,7 +124,10 @@ export function WorkdeskPage() {
   const [isLoadingWorkdesk, setIsLoadingWorkdesk] = useState(true);
   const [apiError, setApiError] = useState("");
 
-  const passedName = [user?.first_name, user?.last_name].filter(Boolean).join(" ").trim();
+  const passedName = [user?.first_name, user?.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
   const userFullName =
     passedName && passedName !== "user" && passedName !== "Staff Member"
       ? passedName
@@ -141,108 +150,111 @@ export function WorkdeskPage() {
     employeeDetails?.position ||
     employeeDetails?.designation ||
     user?.role ||
-    (userFullName.toLowerCase().match(/tochukwu|anigbo|ceo|founder|admin|super/) || (user as any)?.is_superuser
+    (userFullName
+      .toLowerCase()
+      .match(/tochukwu|anigbo|ceo|founder|admin|super/) ||
+    (user as any)?.is_superuser
       ? "CEO & Founder"
       : "Staff");
 
   // Fetch real Work Desk data strictly from backend endpoints
   const loadWorkdeskData = useCallback(async () => {
-      setIsLoadingWorkdesk(true);
-      try {
-        const [
-          sumRes,
-          perfRes,
-          routinesRes,
-          sopsRes,
-          unitsRes,
-          kpisRes,
-          targetsRes,
-          reportsRes,
-        ] = await Promise.all([
-          workdeskService.getSummary().catch(() => null),
-          workdeskService.getPerformanceCard().catch(() => null),
-          workdeskService.getDailyRoutines().catch(() => null),
-          workdeskService.getRoleSOPs().catch(() => null),
-          workdeskService.getDepartmentUnits().catch(() => null),
-          workdeskService.getMyKPIs().catch(() => null),
-          workdeskService.getMyTargets().catch(() => null),
-          workdeskService.getMyTargetReports({ limit: 20 }).catch(() => null),
-        ]);
+    setIsLoadingWorkdesk(true);
+    try {
+      const [
+        sumRes,
+        perfRes,
+        routinesRes,
+        sopsRes,
+        unitsRes,
+        kpisRes,
+        targetsRes,
+        reportsRes,
+      ] = await Promise.all([
+        workdeskService.getSummary().catch(() => null),
+        workdeskService.getPerformanceCard().catch(() => null),
+        workdeskService.getDailyRoutines().catch(() => null),
+        workdeskService.getRoleSOPs().catch(() => null),
+        workdeskService.getDepartmentUnits().catch(() => null),
+        workdeskService.getMyKPIs().catch(() => null),
+        workdeskService.getMyTargets().catch(() => null),
+        workdeskService.getMyTargetReports({ limit: 20 }).catch(() => null),
+      ]);
 
-        if (sumRes?.data) setSummaryData(sumRes.data);
-        else if (sumRes?.error) setApiError(parseApiError(sumRes.error));
-        if (perfRes?.data) setPerfCard(perfRes.data);
-        if (routinesRes?.data) {
-          setApiRoutines(
-            extractItems<DailyRoutineItem>(routinesRes.data, [
-              "items",
-              "results",
-              "routines",
-              "rows",
-              "data",
-            ]),
-          );
-        }
-
-        // Map SOPs to role obligations. Role descriptions can 404 when no backend record exists.
-        if (sopsRes?.data?.items?.length) {
-          const list = (sopsRes.data.items as WorkdeskSopRow[])
-            .map((sop) => sop.title || sop.name || sop.description)
-            .filter((item): item is string => Boolean(item));
-          if (list.length) setApiObligations(list);
-        }
-
-        // Map department units
-        if (Array.isArray(unitsRes?.data) && unitsRes.data.length) {
-          const mapped = (unitsRes.data as WorkdeskUnitRow[]).map(
-            (u, idx) =>
-              [
-                `UNIT ${idx + 1}`,
-                u.name || u.unit_name || `Unit ${idx + 1}`,
-                u.description || "Departmental execution & tracking unit",
-              ] as [string, string, string],
-          );
-          setApiUnits(mapped);
-        }
-
-        if (kpisRes?.data) {
-          setApiKpis(
-            extractItems<EmployeeKPIItem>(kpisRes.data, [
-              "items",
-              "results",
-              "kpis",
-              "rows",
-              "data",
-            ]),
-          );
-        }
-        if (targetsRes?.data) {
-          setApiTargets(
-            extractItems<EmployeeTargetItem>(targetsRes.data, [
-              "items",
-              "results",
-              "targets",
-              "rows",
-              "data",
-            ]),
-          );
-        }
-        if (reportsRes?.data) {
-          setTargetReports(
-            extractItems<TargetReportItem>(reportsRes.data, [
-              "items",
-              "results",
-              "reports",
-              "rows",
-              "data",
-            ]),
-          );
-        }
-      } catch {
-        /* Strictly no dummy fallback */
-      } finally {
-        setIsLoadingWorkdesk(false);
+      if (sumRes?.data) setSummaryData(sumRes.data);
+      else if (sumRes?.error) setApiError(parseApiError(sumRes.error));
+      if (perfRes?.data) setPerfCard(perfRes.data);
+      if (routinesRes?.data) {
+        setApiRoutines(
+          extractItems<DailyRoutineItem>(routinesRes.data, [
+            "items",
+            "results",
+            "routines",
+            "rows",
+            "data",
+          ]),
+        );
       }
+
+      // Map SOPs to role obligations. Role descriptions can 404 when no backend record exists.
+      if (sopsRes?.data?.items?.length) {
+        const list = (sopsRes.data.items as WorkdeskSopRow[])
+          .map((sop) => sop.title || sop.name || sop.description)
+          .filter((item): item is string => Boolean(item));
+        if (list.length) setApiObligations(list);
+      }
+
+      // Map department units
+      if (Array.isArray(unitsRes?.data) && unitsRes.data.length) {
+        const mapped = (unitsRes.data as WorkdeskUnitRow[]).map(
+          (u, idx) =>
+            [
+              `UNIT ${idx + 1}`,
+              u.name || u.unit_name || `Unit ${idx + 1}`,
+              u.description || "Departmental execution & tracking unit",
+            ] as [string, string, string],
+        );
+        setApiUnits(mapped);
+      }
+
+      if (kpisRes?.data) {
+        setApiKpis(
+          extractItems<EmployeeKPIItem>(kpisRes.data, [
+            "items",
+            "results",
+            "kpis",
+            "rows",
+            "data",
+          ]),
+        );
+      }
+      if (targetsRes?.data) {
+        setApiTargets(
+          extractItems<EmployeeTargetItem>(targetsRes.data, [
+            "items",
+            "results",
+            "targets",
+            "rows",
+            "data",
+          ]),
+        );
+      }
+      if (reportsRes?.data) {
+        setTargetReports(
+          extractItems<TargetReportItem>(reportsRes.data, [
+            "items",
+            "results",
+            "reports",
+            "rows",
+            "data",
+          ]),
+        );
+      }
+    } catch {
+      /* Strictly no dummy fallback */
+    } finally {
+      setIsLoadingWorkdesk(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -391,13 +403,22 @@ export function WorkdeskPage() {
     setSummary("");
   };
 
-  if (apiError && (apiError.toLowerCase().includes('permission') || apiError.includes('403'))) {
-    return <NoPermissionPage screen="workdesk" />
+  if (
+    apiError &&
+    (apiError.toLowerCase().includes("permission") || apiError.includes("403"))
+  ) {
+    return <NoPermissionPage screen="workdesk" />;
   }
 
   return (
     <div className="flex min-h-0 flex-col overflow-x-hidden">
-      <Topbar title="My work desk" period={period} onPeriodChange={setPeriod} />
+      <Topbar
+        title="My work desk"
+        period={period}
+        onPeriodChange={setPeriod}
+        hidePeriod={isEmbedded}
+        hideActions={isEmbedded}
+      />
 
       <div className="min-w-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto p-5">
         {/* ── Welcome Hero + Performance Card Banner ──────────────────── */}
@@ -534,7 +555,7 @@ export function WorkdeskPage() {
                   {done} of {total} completed ({pct}%)
                 </span>
               )}
-              </div>
+            </div>
 
             <div className="space-y-6 pt-1">
               {total > 0 ? (
@@ -738,7 +759,9 @@ export function WorkdeskPage() {
                         <div key={String(target.id)} className="mb-2 last:mb-0">
                           <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] font-semibold text-text">
                             <span className="truncate">
-                              {target.title || target.target_name || `Target #${target.id}`}
+                              {target.title ||
+                                target.target_name ||
+                                `Target #${target.id}`}
                             </span>
                             <span>
                               {boundedPercent(target.progress_percentage)}%
@@ -776,13 +799,13 @@ export function WorkdeskPage() {
                   Role obligations
                 </h3>
                 <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => navigate({ to: "/role-governance" })}
-                  className="text-xs font-semibold text-navy hover:underline"
-                >
-                  View role →
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate({ to: "/role-governance" })}
+                    className="text-xs font-semibold text-navy hover:underline"
+                  >
+                    View role →
+                  </button>
                 </div>
               </div>
               {apiObligations.length ? (
@@ -857,7 +880,8 @@ export function WorkdeskPage() {
                       >
                         <div className="flex min-w-0 items-center justify-between gap-2 text-[11px] font-bold text-text">
                           <span className="truncate">
-                            {report.employee_target?.title || `Target report #${report.id}`}
+                            {report.employee_target?.title ||
+                              `Target report #${report.id}`}
                           </span>
                           <span className="shrink-0 text-text-3">
                             {report.status || "Submitted"}

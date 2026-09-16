@@ -33,6 +33,14 @@ const PIPELINE_STAGE_OPTIONS = [
   ...LEAD_STAGE_OPTIONS,
 ]
 
+function invalidNextFollowUpDate(value: string) {
+  if (!value) return false
+  const selected = new Date(`${value}T00:00:00`)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Number.isNaN(selected.getTime()) || selected < today
+}
+
 export function LeadJournalPage() {
   const { leads, setLeads } = useStore()
   const { showToast } = useToast()
@@ -240,6 +248,10 @@ export function LeadJournalPage() {
       showToast('Please enter activity details', 'error')
       return
     }
+    if (invalidNextFollowUpDate(editActNextDate)) {
+      showToast('Next follow-up date cannot be in the past', 'error')
+      return
+    }
 
     setIsSavingActivityEdit(true)
     try {
@@ -282,6 +294,10 @@ export function LeadJournalPage() {
     }
     if (!actNotes.trim()) {
       showToast('Please enter conversation/activity details', 'error')
+      return
+    }
+    if (invalidNextFollowUpDate(actNextDate)) {
+      showToast('Next follow-up date cannot be in the past', 'error')
       return
     }
 
