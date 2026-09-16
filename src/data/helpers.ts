@@ -31,6 +31,53 @@ export function moneyNum(v: string | number): number {
   return /M/i.test(v) ? n * 1000000 : /K/i.test(v) ? n * 1000 : n
 }
 
+export function formatNumber(
+  value: number | string | undefined | null,
+  decimals?: number
+): string {
+  if (value === undefined || value === null || value === '') return '0'
+  const num = typeof value === 'string' ? parseFloat(value.replace(/,/g, '')) : Number(value)
+  if (!Number.isFinite(num)) return '0'
+  return num.toLocaleString('en-US', decimals !== undefined ? {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  } : {
+    maximumFractionDigits: 2,
+  })
+}
+
+export function formatCount(value: number | string | undefined | null): string {
+  return formatNumber(value, 0)
+}
+
+export function formatCurrency(
+  value: number | string | undefined | null,
+  options?: { compact?: boolean; symbol?: string; decimals?: number }
+): string {
+  if (value === undefined || value === null || value === '') return '₦0'
+  const amount = typeof value === 'string' ? parseFloat(value.replace(/,/g, '')) : Number(value)
+  if (!Number.isFinite(amount)) return '₦0'
+  const sym = options?.symbol ?? '₦'
+
+  if (options?.compact) {
+    if (amount >= 1_000_000_000) {
+      return `${sym}${(amount / 1_000_000_000).toFixed(1)}B`
+    }
+    if (amount >= 1_000_000) {
+      return `${sym}${(amount / 1_000_000).toFixed(1)}M`
+    }
+    if (amount >= 1_000) {
+      return `${sym}${Math.round(amount / 1_000).toLocaleString('en-US')}K`
+    }
+  }
+
+  const decimals = options?.decimals ?? (amount % 1 !== 0 ? 2 : 0)
+  return `${sym}${amount.toLocaleString('en-US', {
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  })}`
+}
+
 export function fmtMoney(n: number): string {
   if (n >= 1000000000)
     return '₦' + parseFloat((n / 1000000000).toFixed(1)) + 'B'
