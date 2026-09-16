@@ -225,7 +225,7 @@ function mapRoleNameToKey(
 export function canAccessWithPermissions(
   resource: string,
   action: string,
-  roleKey: string,
+  _roleKey: string,
   permissionMap: Record<string, string[]>,
 ): boolean {
   if (resource === "integrations") return false;
@@ -246,8 +246,6 @@ export function canAccessWithPermissions(
   }
 
   if (
-    roleKey === "ceo" ||
-    roleKey === "admin" ||
     Boolean(permissionMap["*"]) ||
     Boolean(permissionMap.all) ||
     Boolean(permissionMap["all"]) ||
