@@ -2,8 +2,7 @@ import {
   useEffect,
   useState,
 } from 'react'
-import { AppIcon } from '../../components/shared/AppIcon'
-import { BusyLabel, EmptyState, ErrorState, Modal, SkeletonKpiGrid, SkeletonTable, Topbar, Select } from '../shared'
+import { AppIcon, BusyLabel, EmptyState, ErrorState, Modal, SkeletonKpiGrid, SkeletonTable, Topbar, Select, NumberInput } from '../shared'
 import { useToast } from '../../context/ToastContext'
 import { marketingService, type BackendTraditionalMediaPlacementCreate } from '../../services/api/marketingService'
 import { parseApiError } from '../../services/api/apiClient'
@@ -125,7 +124,7 @@ export function MediaRegisterPage() {
         name: form.name.trim(),
         vendor: form.vendor?.trim() || null,
         location: form.location?.trim() || null,
-        amount_paid: form.amount_paid || '0',
+        amount_paid: String(form.amount_paid || '0').replace(/,/g, ''),
         start_date: form.start_date || null,
         proof_url: form.proof_url?.trim() || null,
         division: form.division || null,
@@ -355,6 +354,18 @@ export function MediaRegisterPage() {
 }
 
 function Field({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
+  if (type === 'number') {
+    return (
+      <div>
+        <label className="block text-xs font-bold text-text-2 mb-1">{label}</label>
+        <NumberInput
+          value={value}
+          onChange={onChange}
+          className="w-full p-2 rounded-xl border border-border bg-surface text-xs text-text outline-none focus:border-navy"
+        />
+      </div>
+    )
+  }
   return (
     <div>
       <label className="block text-xs font-bold text-text-2 mb-1">{label}</label>

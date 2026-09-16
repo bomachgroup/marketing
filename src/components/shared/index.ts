@@ -28,3 +28,4 @@ export {
   SkeletonTableBodyRows,
   SkeletonCardGrid,
 } from './Skeletons'
+export { NumberInput, formatNumberWithCommas, stripCommas } from './NumberInput'

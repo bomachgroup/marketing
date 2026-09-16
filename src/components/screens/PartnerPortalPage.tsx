@@ -3,8 +3,7 @@ import {
   useMemo,
   useState,
 } from 'react'
-import { AppIcon } from '../../components/shared/AppIcon'
-import { BusyLabel, EmptyState, ErrorState, Modal, SkeletonKpiGrid, SkeletonList, Topbar, Select } from '../shared'
+import { AppIcon, BusyLabel, EmptyState, ErrorState, Modal, SkeletonKpiGrid, SkeletonList, Topbar, Select, NumberInput } from '../shared'
 import { useToast } from '../../context/ToastContext'
 import { marketingService } from '../../services/api/marketingService'
 import { parseApiError } from '../../services/api/apiClient'
@@ -127,7 +126,7 @@ export function PartnerPortalPage() {
         title: assignForm.title.trim(),
         objective: assignForm.objective.trim() || null,
         due_date: assignForm.dueDate || null,
-        fee: assignForm.fee || '0',
+        fee: String(assignForm.fee || '0').replace(/,/g, ''),
         proof_requirement: assignForm.proofRequirement.trim() || null,
         status: 'assigned',
       })
@@ -161,8 +160,8 @@ export function PartnerPortalPage() {
     try {
       const res = await marketingService.submitPartnerPortalReport({
         task_id: Number(reportForm.taskId),
-        reach: Number(reportForm.reach || 0),
-        lead_count: Number(reportForm.leads || 0),
+        reach: Number(String(reportForm.reach || 0).replace(/,/g, '')),
+        lead_count: Number(String(reportForm.leads || 0).replace(/,/g, '')),
         proof_url: reportForm.proof.trim(),
         note: reportForm.comment.trim() || null,
       })
@@ -402,6 +401,18 @@ export function PartnerPortalPage() {
 }
 
 function Field({ label, value, onChange, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
+  if (type === 'number') {
+    return (
+      <div>
+        <label className="block text-[11px] font-bold text-text-2 mb-1">{label}</label>
+        <NumberInput
+          value={value}
+          onChange={onChange}
+          className="w-full p-2 rounded-xl border border-border bg-surface text-xs text-text placeholder:text-text-3 outline-none focus:border-navy"
+        />
+      </div>
+    )
+  }
   return (
     <div>
       <label className="block text-[11px] font-bold text-text-2 mb-1">{label}</label>

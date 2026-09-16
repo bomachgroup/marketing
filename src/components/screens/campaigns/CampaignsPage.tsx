@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
-import { BusyLabel, EmptyState, ErrorState, Modal, SkeletonCardGrid, SkeletonKpiGrid, SkeletonList, Topbar, Select } from '../../shared'
+import { BusyLabel, EmptyState, ErrorState, Modal, SkeletonCardGrid, SkeletonKpiGrid, SkeletonList, Topbar, Select, NumberInput } from '../../shared'
 import { useToast } from '../../../context/ToastContext'
 import { marketingService } from '../../../services/api/marketingService'
 import { teamService } from '../../../services/api/teamService'
@@ -219,11 +219,11 @@ export function CampaignsPage() {
         channel: newCampaign.channel.trim(),
         description: newCampaign.description.trim() || null,
         status: newCampaign.status,
-        impressions: Number(newCampaign.impressions || 0),
-        ctr: newCampaign.ctr ? Number(newCampaign.ctr) : undefined,
-        roi: newCampaign.roi ? Number(newCampaign.roi) : undefined,
-        budget_allocated: Number(newCampaign.budgetAllocated || 0),
-        budget_spent: Number(newCampaign.budgetSpent || 0),
+        impressions: Number(String(newCampaign.impressions || 0).replace(/,/g, '')),
+        ctr: newCampaign.ctr ? Number(String(newCampaign.ctr).replace(/,/g, '')) : undefined,
+        roi: newCampaign.roi ? Number(String(newCampaign.roi).replace(/,/g, '')) : undefined,
+        budget_allocated: Number(String(newCampaign.budgetAllocated || 0).replace(/,/g, '')),
+        budget_spent: Number(String(newCampaign.budgetSpent || 0).replace(/,/g, '')),
         start_date: newCampaign.startDate || null,
         end_date: newCampaign.endDate || null,
       })
@@ -268,7 +268,7 @@ export function CampaignsPage() {
         branch_id: requestForm.branchId ? Number(requestForm.branchId) : null,
         needed_by: requestForm.neededBy || null,
         priority: requestForm.priority,
-        proposed_budget: Number(requestForm.proposedBudget || 0),
+        proposed_budget: Number(String(requestForm.proposedBudget || 0).replace(/,/g, '')),
         audience: requestForm.audience.trim(),
         product: requestForm.product.trim(),
         problem: requestForm.problem.trim(),
@@ -372,7 +372,7 @@ export function CampaignsPage() {
         }
         res = await marketingService.createCampaignExpense(workspaceCampaign.id, {
           vendor: expenseForm.vendor.trim(),
-          amount: Number(expenseForm.amount),
+          amount: Number(String(expenseForm.amount).replace(/,/g, '')),
           category: 'other',
           status: 'requested',
         })
@@ -805,6 +805,19 @@ function SmallMetric({ label, value }: { label: string; value: ReactNode }) {
 }
 
 function Field({ label, value, onChange, placeholder, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string }) {
+  if (type === 'number') {
+    return (
+      <div>
+        <label className="block text-xs font-bold text-text-2 mb-1">{label}</label>
+        <NumberInput
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder || '0'}
+          className="w-full p-2.5 rounded-xl border border-border bg-surface text-xs text-text outline-none focus:border-navy"
+        />
+      </div>
+    )
+  }
   return (
     <div>
       <label className="block text-xs font-bold text-text-2 mb-1">{label}</label>
