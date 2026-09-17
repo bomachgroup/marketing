@@ -550,10 +550,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async function restoreSession() {
       clearLegacyStoredTokens();
 
-      // Tokens may come from storage after a normal login, or from the
-      // validated parent postMessage below. They are never read from URLs.
-      const storedToken = getAccessToken();
-      const storedRefreshToken = getRefreshToken();
+      const tokenFromUrl = searchParams.get("token") || searchParams.get("access_token");
+      const refreshTokenFromUrl = searchParams.get("refreshToken") || searchParams.get("refresh_token");
       const backendUrlFromUrl =
         searchParams.get("apiBaseUrl") ||
         searchParams.get("backendUrl") ||
@@ -561,6 +559,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (backendUrlFromUrl) {
         setApiBaseUrl(backendUrlFromUrl);
       }
+      if (tokenFromUrl) {
+        setAccessToken(tokenFromUrl);
+        if (refreshTokenFromUrl) setRefreshToken(refreshTokenFromUrl);
+      }
+
+      const storedToken = tokenFromUrl || getAccessToken();
+      const storedRefreshToken = refreshTokenFromUrl || getRefreshToken();
       if (storedToken) {
         try {
           setAccessToken(storedToken);

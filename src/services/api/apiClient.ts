@@ -39,6 +39,16 @@ export function extractSearchParams(): URLSearchParams {
   return combined;
 }
 
+function isLiveShellOrigin(originOrUrl: string): boolean {
+  const lower = originOrUrl.toLowerCase();
+  return (
+    lower.includes("bomachosapp") ||
+    lower.includes("bomach-os-app") ||
+    lower.includes("bomachauthapp") ||
+    lower.includes("bomachauth.bgbot.app")
+  );
+}
+
 export function getApiBaseUrl(): string {
   if (cachedApiBaseUrl) {
     return cachedApiBaseUrl;
@@ -73,22 +83,30 @@ export function getApiBaseUrl(): string {
     const hostname = window.location.hostname.toLowerCase();
     const referrer = (document.referrer || "").toLowerCase();
 
-    // 1. Only test environments (bomach-os-test.web.app or localhost) -> test backend
-    const isTestEnvironment =
-      hostname === "bomach-os-test.web.app" ||
-      referrer.includes("bomach-os-test.web.app") ||
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "[::1]";
+    // The ONLY time live backend is used is when viewing from the live shell
+    let isLiveEnvironment = isLiveShellOrigin(hostname) || isLiveShellOrigin(referrer);
 
-    if (isTestEnvironment) {
-      return "https://bomachauthtest.bgbot.app";
+    try {
+      const ancestors = (window.location as any).ancestorOrigins;
+      if (ancestors && ancestors.length > 0) {
+        for (let i = 0; i < ancestors.length; i++) {
+          if (isLiveShellOrigin(ancestors[i])) {
+            isLiveEnvironment = true;
+            break;
+          }
+        }
+      }
+    } catch {}
+
+    if (isLiveEnvironment) {
+      return "https://bomachauth.bgbot.app";
     }
 
-    return "https://bomachauth.bgbot.app";
+    // In all other cases (standalone on its own, localhost, test shell), use test backend
+    return "https://bomachauthtest.bgbot.app";
   }
 
-  return "https://bomachauth.bgbot.app";
+  return "https://bomachauthtest.bgbot.app";
 }
 
 export interface ApiResponse<T = unknown> {
