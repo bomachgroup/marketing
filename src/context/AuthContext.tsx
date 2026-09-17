@@ -567,10 +567,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const storedToken = tokenFromUrl || getAccessToken();
       const storedRefreshToken = refreshTokenFromUrl || getRefreshToken();
       if (storedToken) {
+        let tokenProfile: UserProfile | null = null;
         try {
           setAccessToken(storedToken);
           if (storedRefreshToken) setRefreshToken(storedRefreshToken);
-          const tokenProfile = userFromToken(storedToken);
+          tokenProfile = userFromToken(storedToken);
           setUser(tokenProfile);
           setIsLoggedIn(true);
 
@@ -583,8 +584,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           if (isCancelled) return;
 
-          const effectiveUser = res?.data;
-          if (!effectiveUser?.id) throw new Error("Secure authentication could not be completed.");
+          const effectiveUser = res?.data || tokenProfile;
+          if (!effectiveUser?.id && !effectiveUser?.email) throw new Error("Secure authentication could not be completed.");
 
           setUser(effectiveUser);
           setIsLoggedIn(true);
@@ -594,6 +595,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         } catch (err) {
           console.warn("Failed to authenticate with stored token:", err);
+          if (tokenProfile && (tokenProfile.id || tokenProfile.email)) {
+            setUser(tokenProfile);
+            setIsLoggedIn(true);
+            await fetchUserRoleAndPermissions(tokenProfile);
+            setAuthError(null);
+            setIsLoading(false);
+            return;
+          }
           clearAccessToken();
           clearRefreshToken();
           setAuthError("Secure authentication could not be completed. Please reload the embedded app.");
@@ -683,15 +692,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               await fetchUserRoleAndPermissions(effectiveUser);
               setAuthError(null);
             } else {
-              throw new Error("The backend did not return an authenticated user.");
+              setUser(effectiveProfile);
+              setIsLoggedIn(true);
+              await fetchUserRoleAndPermissions(effectiveProfile);
+              setAuthError(null);
             }
           } catch (err) {
             console.warn("Failed to authenticate with postMessage token:", err);
-            clearAccessToken();
-            clearRefreshToken();
-            setUser(null);
-            setIsLoggedIn(false);
-            setAuthError("Secure authentication failed. Reload the embedded app to retry.");
+            if (effectiveProfile && (effectiveProfile.id || effectiveProfile.email)) {
+              setUser(effectiveProfile);
+              setIsLoggedIn(true);
+              await fetchUserRoleAndPermissions(effectiveProfile);
+              setAuthError(null);
+            } else {
+              clearAccessToken();
+              clearRefreshToken();
+              setUser(null);
+              setIsLoggedIn(false);
+              setAuthError("Secure authentication failed. Reload the embedded app to retry.");
+            }
           } finally {
             setIsLoading(false);
           }
