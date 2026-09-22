@@ -13,6 +13,8 @@ import {
 import { ShellTopbar } from "../shared/Topbar";
 import NoPermissionPage from "./NoPermissionPage";
 import { getEmbeddedLayoutFlags } from "./embeddedLayout";
+import { parentOriginFromReferrer } from "../../services/embedding/authMessage";
+import { requestFlutterNewLeadRoute } from "../../services/embedding/navigationMessage";
 
 function AppRouteSkeleton() {
   return (
@@ -81,6 +83,15 @@ export default function AppShell() {
     typeof window !== "undefined" ? window.location : undefined,
     entryLayoutFlags,
   );
+  const parentOrigin =
+    isEmbed && typeof document !== "undefined"
+      ? parentOriginFromReferrer(document.referrer)
+      : null;
+
+  useEffect(() => {
+    if (!isEmbed || !parentOrigin || typeof window === "undefined") return;
+    requestFlutterNewLeadRoute(location.pathname, window.parent, parentOrigin);
+  }, [isEmbed, location.pathname, parentOrigin]);
 
   if (isLoading) {
     return <AuthSkeleton />;
