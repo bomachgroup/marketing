@@ -13,10 +13,50 @@ import type {
 } from "../../../services/api/performanceTypes";
 import { parseApiError } from "../../../services/api/apiClient";
 import { workdeskService } from "../../../services/api/workdeskService";
+import { marketingService } from "../../../services/api/marketingService";
 
 type PerformanceBridgePageProps = {
   canManage: boolean;
 };
+
+type RevenueObjective = {
+  id: string | number;
+  title: string;
+  status?: string;
+  key_results: Array<{ id: string | number; title: string; target_value?: number | string }>;
+};
+
+function extractRevenueTargetCount(data: unknown): number | null {
+  if (!data || typeof data !== "object") return null;
+  const value = data as Record<string, unknown>;
+  for (const key of ["total_targets", "target_count", "total", "count"]) {
+    const count = Number(value[key]);
+    if (Number.isFinite(count)) return count;
+  }
+  return null;
+}
+
+function extractRevenueObjectives(data: unknown): RevenueObjective[] {
+  const payload = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  const rows = Array.isArray(data)
+    ? data
+    : ["items", "results", "data", "objectives"].flatMap((key) => Array.isArray(payload[key]) ? payload[key] : []);
+
+  return rows.flatMap((row) => {
+    if (!row || typeof row !== "object") return [];
+    const value = row as Record<string, unknown>;
+    const id = value.id;
+    const title = typeof value.title === "string" ? value.title : null;
+    if ((typeof id !== "string" && typeof id !== "number") || !title) return [];
+    const keyResults = Array.isArray(value.key_results) ? value.key_results.flatMap((item) => {
+      if (!item || typeof item !== "object") return [];
+      const keyResult = item as Record<string, unknown>;
+      if ((typeof keyResult.id !== "string" && typeof keyResult.id !== "number") || typeof keyResult.title !== "string") return [];
+      return [{ id: keyResult.id, title: keyResult.title, target_value: typeof keyResult.target_value === "number" || typeof keyResult.target_value === "string" ? keyResult.target_value : undefined }];
+    }) : [];
+    return [{ id, title, key_results: keyResults, ...(typeof value.status === "string" ? { status: value.status } : {}) }];
+  });
+}
 
 function formatProgress(target: PerformanceTargetProgress): string {
   return target.achievementPercent === undefined
@@ -29,6 +69,16 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
   const [myTargets, setMyTargets] = useState<PerformanceTargetProgress[]>([]);
   const [roleKpis, setRoleKpis] = useState<PerformanceKpi[]>([]);
   const [roleTargets, setRoleTargets] = useState<PerformanceTarget[]>([]);
+  const [revenueObjectives, setRevenueObjectives] = useState<RevenueObjective[]>([]);
+  const [revenueOkrError, setRevenueOkrError] = useState<string | null>(null);
+  const [targetSummaryCount, setRevenueTargetCount] = useState<number | null>(null);
+  const [revenueTargetError, setRevenueTargetError] = useState<string | null>(null);
+  const [showObjectiveForm, setShowObjectiveForm] = useState(false);
+  const [objectiveTitle, setObjectiveTitle] = useState("");
+  const [objectiveStart, setObjectiveStart] = useState("");
+  const [objectiveEnd, setObjectiveEnd] = useState("");
+  const [objectiveMutationError, setObjectiveMutationError] = useState<string | null>(null);
+  const [isCreatingObjective, setIsCreatingObjective] = useState(false);
   const [selectedRoleId, setSelectedRoleId] = useState<string | number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRoleLoading, setIsRoleLoading] = useState(false);
@@ -38,12 +88,33 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
 
   useEffect(() => {
     let active = true;
-    void Promise.all([listRoles(), getMyTargets()])
-      .then(([nextRoles, nextTargets]) => {
+    void Promise.all([
+      listRoles(),
+      getMyTargets(),
+      marketingService.getRevenueOkrs(),
+      marketingService.getRevenueTargetsSummary(),
+    ])
+      .then(([nextRoles, nextTargets, okrResult, targetSummaryResult]) => {
         if (!active) return;
         setRoles(nextRoles);
         setMyTargets(nextTargets);
         setSelectedRoleId((current) => current ?? nextRoles[0]?.id ?? null);
+        if (okrResult.status >= 200 && okrResult.status < 300) {
+          setRevenueObjectives(extractRevenueObjectives(okrResult.data));
+          setRevenueOkrError(null);
+        } else if (okrResult.status === 404) {
+          setRevenueOkrError("Revenue Execution OKRs are unavailable from the current backend.");
+        } else {
+          setRevenueOkrError("Could not load Revenue Execution OKRs. Retry to try again.");
+        }
+        if (targetSummaryResult.status >= 200 && targetSummaryResult.status < 300) {
+          setRevenueTargetCount(extractRevenueTargetCount(targetSummaryResult.data));
+          setRevenueTargetError(null);
+        } else if (targetSummaryResult.status === 404) {
+          setRevenueTargetError("Revenue Execution target summaries are unavailable from the current backend.");
+        } else {
+          setRevenueTargetError("Could not load Revenue Execution target summary.");
+        }
       })
       .catch((reason: unknown) => {
         if (active) setError(reason instanceof Error ? reason.message : "Unable to load performance data.");
@@ -82,6 +153,43 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
     setError(null);
     setIsRoleLoading(true);
     setSelectedRoleId(roleId);
+  };
+
+  const handleCreateObjective = async () => {
+    if (!objectiveTitle.trim() || !objectiveStart || !objectiveEnd) {
+      setObjectiveMutationError("Title, start date, and end date are required.");
+      return;
+    }
+
+    setIsCreatingObjective(true);
+    setObjectiveMutationError(null);
+    try {
+      const result = await marketingService.createRevenueObjective({
+        title: objectiveTitle.trim(),
+        period_start: objectiveStart,
+        period_end: objectiveEnd,
+      });
+
+      if (result.error || result.status < 200 || result.status >= 300) {
+        setObjectiveMutationError(parseApiError(result.error || `Objective creation failed (${result.status}).`));
+        return;
+      }
+
+      const refreshed = await marketingService.getRevenueOkrs();
+      if (refreshed.status >= 200 && refreshed.status < 300) {
+        setRevenueObjectives(extractRevenueObjectives(refreshed.data));
+        setShowObjectiveForm(false);
+        setObjectiveTitle("");
+        setObjectiveStart("");
+        setObjectiveEnd("");
+      } else {
+        setObjectiveMutationError("Objective was created, but the refreshed list could not be loaded.");
+      }
+    } catch (reason: unknown) {
+      setObjectiveMutationError(parseApiError(reason));
+    } finally {
+      setIsCreatingObjective(false);
+    }
   };
 
   const handleEvidenceSubmit = async (target: PerformanceTargetProgress) => {
@@ -140,15 +248,71 @@ export function PerformanceBridgePage({ canManage }: PerformanceBridgePageProps)
           <p className="mt-1 max-w-2xl text-sm text-text-2">Role definitions come from HR. Progress is shown only when the backend returns employee target evidence.</p>
         </div>
         {canManage ? (
-          <button type="button" className="rounded-xl bg-navy px-4 py-2 text-xs font-bold text-white" aria-label="Manage role targets">
-            Manage role targets
-          </button>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="rounded-xl border border-border bg-surface px-4 py-2 text-xs font-bold text-text" aria-label="Manage role targets">
+              Manage role targets
+            </button>
+            <button type="button" onClick={() => { setObjectiveMutationError(null); setShowObjectiveForm(true); }} className="rounded-xl bg-navy px-4 py-2 text-xs font-bold text-white" aria-label="Create Revenue objective">
+              Create Revenue objective
+            </button>
+          </div>
         ) : null}
       </header>
 
-      <section className="rounded-xl border border-amber-200 bg-amber-50 p-4" aria-label="Unsupported OKR capability">
-        <h2 className="text-sm font-bold text-amber-950">Company OKRs unavailable</h2>
-        <p className="mt-1 text-xs text-amber-900">Objectives and OKRs are not available from the current backend. This view uses supported role targets and KPI definitions instead.</p>
+      <section className="rounded-xl border border-border bg-surface p-5 shadow-sm" aria-label="Revenue Execution OKRs">
+        <h2 className="text-base font-bold text-text">Revenue Execution OKRs</h2>
+        <p className="mt-1 text-xs text-text-3">Revenue objectives and key results returned by the backend.</p>
+        {showObjectiveForm ? (
+          <div className="mt-4 grid gap-3 rounded-lg border border-border bg-surface-1 p-4 sm:grid-cols-3">
+            <label className="text-xs font-semibold text-text-2 sm:col-span-3">
+              Objective title
+              <input aria-label="Objective title" value={objectiveTitle} onChange={(event) => setObjectiveTitle(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text" />
+            </label>
+            <label className="text-xs font-semibold text-text-2">
+              Start date
+              <input aria-label="Objective start" type="date" value={objectiveStart} onChange={(event) => setObjectiveStart(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text" />
+            </label>
+            <label className="text-xs font-semibold text-text-2">
+              End date
+              <input aria-label="Objective end" type="date" value={objectiveEnd} onChange={(event) => setObjectiveEnd(event.target.value)} className="mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text" />
+            </label>
+            <div className="flex items-end gap-2">
+              <button type="button" onClick={() => setShowObjectiveForm(false)} className="rounded-lg border border-border px-3 py-2 text-xs font-semibold text-text-2">Cancel</button>
+              <button type="button" disabled={isCreatingObjective} onClick={() => void handleCreateObjective()} className="rounded-lg bg-navy px-3 py-2 text-xs font-bold text-white disabled:opacity-60">{isCreatingObjective ? "Saving…" : "Save objective"}</button>
+            </div>
+            {objectiveMutationError ? <p className="text-xs font-semibold text-red-700 sm:col-span-3" role="alert">{objectiveMutationError}</p> : null}
+          </div>
+        ) : null}
+        {revenueOkrError ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-xs font-semibold text-red-800" role="alert">{revenueOkrError}</p> : null}
+        {!revenueOkrError && !revenueObjectives.length && !isLoading ? <p className="mt-3 text-xs text-text-2">No Revenue Execution OKRs were returned.</p> : null}
+        {revenueObjectives.length ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {revenueObjectives.map((objective) => (
+              <article key={objective.id} className="rounded-lg border border-border bg-surface-1 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-bold text-text">{objective.title}</h3>
+                  {objective.status ? <span className="text-[11px] font-semibold text-text-3">{objective.status}</span> : null}
+                </div>
+                {objective.key_results.length ? (
+                  <ul className="mt-3 space-y-1 text-xs text-text-2">
+                    {objective.key_results.map((keyResult) => <li key={keyResult.id}>{keyResult.title}{keyResult.target_value !== undefined ? ` · target ${keyResult.target_value}` : ""}</li>)}
+                  </ul>
+                ) : <p className="mt-3 text-xs text-text-3">No key results returned.</p>}
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="rounded-xl border border-border bg-surface p-5 shadow-sm" aria-label="Revenue Execution target summary">
+        <h2 className="text-base font-bold text-text">Revenue Execution target summary</h2>
+        {revenueTargetError ? (
+          <p className="mt-3 rounded-lg bg-red-50 p-3 text-xs font-semibold text-red-800" role="alert">{revenueTargetError}</p>
+        ) : targetSummaryCount === null ? (
+          <p className="mt-3 text-xs text-text-2">No target summary was returned.</p>
+        ) : (
+          <p className="mt-3 text-xs text-text-2">{targetSummaryCount} targets in the current summary</p>
+        )}
       </section>
 
       {error ? (

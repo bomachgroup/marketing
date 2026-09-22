@@ -8,6 +8,7 @@ import {
 } from "../../../services/api/performanceApi";
 import { PerformanceBridgePage } from "./PerformanceBridgePage";
 import { workdeskService } from "../../../services/api/workdeskService";
+import { marketingService } from "../../../services/api/marketingService";
 
 vi.mock("../../../services/api/performanceApi", () => ({
   getMyTargets: vi.fn(),
@@ -22,15 +23,35 @@ vi.mock("../../../services/api/workdeskService", () => ({
   },
 }));
 
+vi.mock("../../../services/api/marketingService", () => ({
+  marketingService: {
+    getRevenueOkrs: vi.fn(),
+    getRevenueTargetsSummary: vi.fn(),
+    createRevenueObjective: vi.fn(),
+  },
+}));
+
 const mockedListRoles = vi.mocked(listRoles);
 const mockedGetRoleKpis = vi.mocked(getRoleKpis);
 const mockedGetRoleTargetTemplates = vi.mocked(getRoleTargetTemplates);
 const mockedGetMyTargets = vi.mocked(getMyTargets);
 const mockedCreateTargetReport = vi.mocked(workdeskService.createTargetReport);
+const mockedGetRevenueOkrs = vi.mocked(marketingService.getRevenueOkrs);
+const mockedGetRevenueTargetsSummary = vi.mocked(marketingService.getRevenueTargetsSummary);
+const mockedCreateRevenueObjective = vi.mocked(marketingService.createRevenueObjective);
 
 describe("PerformanceBridgePage", () => {
   beforeEach(() => {
     vi.resetAllMocks();
+    mockedGetRevenueOkrs.mockResolvedValue({
+      status: 200,
+      data: { items: [{ id: 1, title: "Improve conversion", key_results: [] }] },
+    });
+    mockedGetRevenueTargetsSummary.mockResolvedValue({
+      status: 200,
+      data: { total_targets: 3 },
+    });
+    mockedCreateRevenueObjective.mockResolvedValue({ status: 201, data: { id: 2 } });
   });
 
   afterEach(() => {
@@ -160,14 +181,25 @@ describe("PerformanceBridgePage", () => {
     expect(screen.queryByText("No target pack returned")).not.toBeInTheDocument();
   });
 
-  it("labels company OKRs as unavailable from the current backend", async () => {
+  it("renders supported Revenue Execution OKRs from the backend", async () => {
     mockedListRoles.mockResolvedValue([]);
     mockedGetMyTargets.mockResolvedValue([]);
 
     render(<PerformanceBridgePage canManage={false} />);
 
-    expect(screen.getByText("Company OKRs unavailable")).toBeInTheDocument();
-    expect(screen.getByText(/Objectives and OKRs are not available from the current backend/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Revenue Execution OKRs")).toBeInTheDocument());
+    expect(screen.getByText("Improve conversion")).toBeInTheDocument();
+    expect(mockedGetRevenueOkrs).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the supported Revenue Execution target summary", async () => {
+    mockedListRoles.mockResolvedValue([]);
+    mockedGetMyTargets.mockResolvedValue([]);
+
+    render(<PerformanceBridgePage canManage={false} />);
+
+    await waitFor(() => expect(screen.getByText("3 targets in the current summary")).toBeInTheDocument());
+    expect(mockedGetRevenueTargetsSummary).toHaveBeenCalledTimes(1);
   });
 
   it("does not expose management controls to an unauthorized user", async () => {
@@ -180,5 +212,43 @@ describe("PerformanceBridgePage", () => {
 
     await waitFor(() => expect(screen.getByText(/No target pack returned/)).toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Manage role targets" })).not.toBeInTheDocument();
+  });
+
+  it("creates a Revenue Execution objective and refreshes the server-backed list", async () => {
+    mockedListRoles.mockResolvedValue([]);
+    mockedGetMyTargets.mockResolvedValue([]);
+
+    render(<PerformanceBridgePage canManage />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create Revenue objective" })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "Create Revenue objective" }));
+    fireEvent.change(screen.getByLabelText("Objective title"), { target: { value: "Improve retention" } });
+    fireEvent.change(screen.getByLabelText("Objective start"), { target: { value: "2026-09-01" } });
+    fireEvent.change(screen.getByLabelText("Objective end"), { target: { value: "2026-12-31" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save objective" }));
+
+    await waitFor(() => expect(mockedCreateRevenueObjective).toHaveBeenCalledWith({
+      title: "Improve retention",
+      period_start: "2026-09-01",
+      period_end: "2026-12-31",
+    }));
+    expect(mockedGetRevenueOkrs).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the objective form visible when objective creation fails", async () => {
+    mockedListRoles.mockResolvedValue([]);
+    mockedGetMyTargets.mockResolvedValue([]);
+    mockedCreateRevenueObjective.mockRejectedValue(new Error("Revenue service unavailable"));
+
+    render(<PerformanceBridgePage canManage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create Revenue objective" }));
+    fireEvent.change(screen.getByLabelText("Objective title"), { target: { value: "Improve retention" } });
+    fireEvent.change(screen.getByLabelText("Objective start"), { target: { value: "2026-09-01" } });
+    fireEvent.change(screen.getByLabelText("Objective end"), { target: { value: "2026-09-30" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save objective" }));
+
+    expect(await screen.findByText("Revenue service unavailable")).toBeInTheDocument();
+    expect(screen.getByLabelText("Objective title")).toHaveValue("Improve retention");
   });
 });

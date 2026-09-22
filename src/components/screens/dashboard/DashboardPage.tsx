@@ -275,6 +275,7 @@ export function DashboardPage() {
   const [scorecardRows, setScorecardRows] = useState<unknown[]>([])
   const [approvalAlerts, setApprovalAlerts] = useState<AlertRow[]>([])
   const [contentItems, setContentItems] = useState<unknown[]>([])
+  const [revenueOkrCount, setRevenueOkrCount] = useState(0)
   const [isLoading, setIsLoading] = useState(true)
   const [apiError, setApiError] = useState('')
 
@@ -296,6 +297,7 @@ export function DashboardPage() {
           scorecardRes,
           approvalsRes,
           contentRes,
+          revenueOkrRes,
         ] = await Promise.all([
           marketingService.getLeadSummary(),
           marketingService.getLeads({ limit: 6 }),
@@ -305,6 +307,7 @@ export function DashboardPage() {
           marketingService.getActivityScorecard(),
           marketingService.getApprovals(),
           marketingService.getContentBriefs(),
+          marketingService.getRevenueOkrs(),
         ])
 
         if (cancelled) return
@@ -318,6 +321,7 @@ export function DashboardPage() {
           scorecardRes.error,
           approvalsRes.error,
           contentRes.error,
+          revenueOkrRes.error,
         ].filter(Boolean)
 
         if (errors.length) setApiError(parseApiError(errors[0]))
@@ -330,6 +334,17 @@ export function DashboardPage() {
         setScorecardRows(asArray(scorecardRes.data))
         setApprovalAlerts(transformApprovalAlerts(approvalsRes.data))
         setContentItems(asArray(contentRes.data))
+        const okrPayload = revenueOkrRes.data && typeof revenueOkrRes.data === 'object'
+          ? revenueOkrRes.data as Record<string, unknown>
+          : null
+        const okrRows = Array.isArray(revenueOkrRes.data)
+          ? revenueOkrRes.data
+          : okrPayload && Array.isArray(okrPayload.items)
+            ? okrPayload.items
+            : okrPayload && Array.isArray(okrPayload.results)
+              ? okrPayload.results
+              : []
+        setRevenueOkrCount(okrRows.length)
       } catch (err) {
         if (!cancelled) setApiError(parseApiError(err))
       } finally {
@@ -488,15 +503,15 @@ export function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-          <section className="space-y-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4 shadow-xs">
-            <div className="flex items-center justify-between border-b border-amber-200 pb-2.5">
-              <h3 className="text-sm font-bold text-text">Company OKRs unavailable</h3>
+          <section className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-xs">
+            <div className="flex items-center justify-between border-b border-border/80 pb-2.5">
+              <h3 className="text-sm font-bold text-text">Revenue Execution OKRs</h3>
               <button type="button" onClick={() => navigate({ to: '/okrs' })} className="text-xs font-semibold text-navy hover:underline">
-                View supported targets {'->'}
+                View OKRs {'->'}
               </button>
             </div>
             <p className="text-xs leading-relaxed text-text-2">
-              Objectives and OKRs are not available from the current backend. Use Targets &amp; progress for supported role KPIs and employee targets.
+              Revenue objectives and key results are available from the backend ({revenueOkrCount} returned). Use the OKRs page for details and supported role targets.
             </p>
           </section>
 

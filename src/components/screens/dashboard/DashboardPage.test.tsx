@@ -57,16 +57,16 @@ describe("DashboardPage performance contract", () => {
 
   afterEach(() => cleanup());
 
-  it("does not consume or present the unsupported company OKR endpoint", async () => {
+  it("uses the supported Revenue Execution OKR endpoint", async () => {
     render(
       <ShellProvider>
         <DashboardPage />
       </ShellProvider>,
     );
 
-    await waitFor(() => expect(screen.getByText("Company OKRs unavailable")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("Revenue Execution OKRs")).toBeInTheDocument());
 
-    expect(marketingService.getRevenueOkrs).not.toHaveBeenCalled();
-    expect(screen.getByText(/Objectives and OKRs are not available from the current backend/)).toBeInTheDocument();
+    expect(marketingService.getRevenueOkrs).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Revenue objectives and key results are available/)).toBeInTheDocument();
   });
 });

@@ -59,13 +59,6 @@ type QualificationItem = {
   status: string
 }
 
-const EMPTY_METRICS: ControlMetrics = {
-  newUncontacted: 0,
-  slaBreaches: 0,
-  hotLeads: 0,
-  staleOpportunities: 0,
-}
-
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -329,17 +322,9 @@ export function LeadControlPage() {
         setScoringModel(transformScoringModel(res.data))
         setQualificationChecklist(transformQualificationChecklist(res.data))
       } else {
-        setLeads([])
-        setKpiCards(transformKpiCards(null, EMPTY_METRICS))
-        setScoringModel([])
-        setQualificationChecklist([])
         setApiError(parseApiError(res.error || 'Could not load lead control data'))
       }
     } catch (err) {
-      setLeads([])
-      setKpiCards(transformKpiCards(null, EMPTY_METRICS))
-      setScoringModel([])
-      setQualificationChecklist([])
       setApiError(parseApiError(err instanceof Error ? err.message : 'Could not load lead control data'))
     } finally {
       setIsLoading(false)

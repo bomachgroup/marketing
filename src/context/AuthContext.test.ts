@@ -29,4 +29,16 @@ describe("authenticated permission checks", () => {
       }),
     ).toBe(false);
   });
+
+  it("uses the published Revenue Execution resource for supported screens", () => {
+    const permissionMap = { revenue_execution: ["view", "create", "update"] };
+
+    expect(canAccessWithPermissions("revenue-command", "view", "staff", permissionMap)).toBe(true);
+    expect(canAccessWithPermissions("forecast", "view", "staff", permissionMap)).toBe(true);
+    expect(canAccessWithPermissions("turnaround", "view", "staff", permissionMap)).toBe(true);
+    expect(canAccessWithPermissions("lead-control", "view", "staff", permissionMap)).toBe(true);
+    expect(canAccessWithPermissions("playbooks", "view", "staff", permissionMap)).toBe(true);
+    expect(canAccessWithPermissions("okrs", "view", "staff", permissionMap)).toBe(true);
+    expect(canAccessWithPermissions("revenue-command", "create", "staff", permissionMap)).toBe(true);
+  });
 });

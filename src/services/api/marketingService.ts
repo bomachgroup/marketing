@@ -764,6 +764,33 @@ export interface RevenueKeyResultUpdate {
   sort_order?: number | null
 }
 
+export interface RevenueObjectiveCreate {
+  title: string
+  period_start: string
+  period_end: string
+  description?: string | null
+  status?: string | null
+  branch_id?: number | null
+  owner_id?: number | null
+  sort_order?: number | null
+}
+
+export type RevenueObjectiveUpdate = Partial<RevenueObjectiveCreate>
+
+export interface RevenueKeyResultCreate {
+  title: string
+  target_value?: number | string | null
+  actual_value?: number | string | null
+  unit?: string | null
+  progress_mode?: string | null
+  source_metric_key?: string | null
+  linked_employee_target_id?: number | null
+  linked_kpi_record_id?: number | null
+  status?: string | null
+  weight?: number | string | null
+  sort_order?: number | null
+}
+
 export interface ComplianceRecordCreate {
   full_name: string
   email_address: string
@@ -1635,6 +1662,20 @@ export const marketingService = {
     return apiRequest(`/api/v1/revenue-execution/okrs${toQuery(params)}`)
   },
 
+  createRevenueObjective: async (payload: RevenueObjectiveCreate) => {
+    return apiRequest('/api/v1/revenue-execution/okrs', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  createRevenueKeyResult: async (objectiveId: string | number, payload: RevenueKeyResultCreate) => {
+    return apiRequest(`/api/v1/revenue-execution/okrs/${objectiveId}/key-results`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
   updateRevenueKeyResult: async (keyResultId: string | number, payload: RevenueKeyResultUpdate) => {
     return apiRequest(`/api/v1/revenue-execution/okrs/key-results/${keyResultId}`, {
       method: 'PATCH',
@@ -1642,7 +1683,7 @@ export const marketingService = {
     })
   },
 
-  updateRevenueObjective: async (objectiveId: string | number, payload: JsonPayload) => {
+  updateRevenueObjective: async (objectiveId: string | number, payload: RevenueObjectiveUpdate) => {
     return apiRequest(`/api/v1/revenue-execution/okrs/${objectiveId}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),

@@ -12,6 +12,7 @@ import {
 } from "../shared/Skeletons";
 import { ShellTopbar } from "../shared/Topbar";
 import NoPermissionPage from "./NoPermissionPage";
+import { getEmbeddedLayoutFlags } from "./embeddedLayout";
 
 function AppRouteSkeleton() {
   return (
@@ -71,20 +72,9 @@ export default function AppShell() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
-  const searchParams = new URLSearchParams(
-    typeof window !== "undefined" ? window.location.search : "",
+  const { isEmbed, hideSidebar, hideTopbar } = getEmbeddedLayoutFlags(
+    typeof window !== "undefined" ? window.location : undefined,
   );
-  const isEmbed =
-    searchParams.get("embed") === "true" ||
-    searchParams.get("embedded") === "true";
-  const hideSidebar =
-    isEmbed ||
-    searchParams.get("hideSidebar") === "true" ||
-    searchParams.get("hide_sidebar") === "true";
-  const hideTopbar =
-    isEmbed ||
-    searchParams.get("hideTopbar") === "true" ||
-    searchParams.get("hide_topbar") === "true";
 
   if (isLoading) {
     return <AuthSkeleton />;

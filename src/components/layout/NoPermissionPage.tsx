@@ -5,13 +5,7 @@ import { screenTitleFromPath } from '../../navigation'
 
 export default function NoPermissionPage({ screen }: { screen: string }) {
   const navigate = useNavigate()
-  const { userRole, currentRole, employeeDetails, getFirstAccessibleScreen, hasPermission } = useAuth()
-  const roleDisplay =
-    employeeDetails?.role_name ||
-    employeeDetails?.designation ||
-    userRole?.name ||
-    employeeDetails?.position ||
-    currentRole.toUpperCase()
+  const { getFirstAccessibleScreen, hasPermission } = useAuth()
   const pageTitle = screenTitleFromPath(screen)
   const firstAllowedScreen = getFirstAccessibleScreen()
   const firstAllowedTitle = screenTitleFromPath(firstAllowedScreen)
@@ -27,27 +21,12 @@ export default function NoPermissionPage({ screen }: { screen: string }) {
 
         <div className="space-y-2">
           <span className="inline-flex items-center gap-1.5 rounded-full bg-red-100/70 px-3 py-1 text-xs font-bold text-red-800">
-            HTTP 403 • Access Restricted
+            Access restricted
           </span>
           <h2 className="text-2xl font-bold text-text">No Permission to View Page</h2>
           <p className="text-sm text-text-3">
-            You do not have permission to view the <strong className="text-text">{pageTitle}</strong> page (<code className="text-xs bg-surface-1 px-1.5 py-0.5 rounded text-navy font-mono">/{screen}</code>).
+            You do not have access to this page. The <strong className="text-text">{pageTitle}</strong> page is restricted for your account.
           </p>
-        </div>
-
-        <div className="w-full rounded-xl border border-border/80 bg-surface-1 p-4 text-left text-xs space-y-2">
-          <div className="flex items-center justify-between text-text-3">
-            <span>Your Active Role:</span>
-            <span className="font-semibold text-text">{roleDisplay}</span>
-          </div>
-          <div className="flex items-center justify-between text-text-3">
-            <span>Required Resource:</span>
-            <span className="font-mono text-xs text-navy font-semibold">{screen}:view</span>
-          </div>
-          <div className="flex items-center justify-between text-text-3">
-            <span>Access Policy:</span>
-            <span className="text-red-600 font-medium">Denied by Role Governance</span>
-          </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-center gap-3 pt-2">

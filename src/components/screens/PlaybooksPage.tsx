@@ -97,13 +97,11 @@ export function PlaybooksPage() {
       if (listRes.data && responseHasRows(listRes.data)) {
         setGuide(transformSalesPlaybook(listRes.data, filters))
       } else if (listRes.error) {
-        setGuide(transformSalesPlaybook({}, filters))
         setApiError(parseApiError(listRes.error || 'Could not load sales playbooks.'))
       } else {
         setGuide(transformSalesPlaybook({}, filters))
       }
     } catch (err) {
-      setGuide(transformSalesPlaybook({}, { division, stage, persona: customerType }))
       setApiError(parseApiError(err instanceof Error ? err.message : err))
     } finally {
       setIsLoading(false)
