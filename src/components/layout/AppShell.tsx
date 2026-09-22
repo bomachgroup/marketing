@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { Navigate, Outlet, useLocation } from "@tanstack/react-router";
 import { useAuth } from "../../context/AuthContext";
 import { ShellProvider } from "../../context/ShellContext";
@@ -72,8 +72,14 @@ export default function AppShell() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
+  const [entryLayoutFlags] = useState(() =>
+    getEmbeddedLayoutFlags(
+      typeof window !== "undefined" ? window.location : undefined,
+    ),
+  );
   const { isEmbed, hideSidebar, hideTopbar } = getEmbeddedLayoutFlags(
     typeof window !== "undefined" ? window.location : undefined,
+    entryLayoutFlags,
   );
 
   if (isLoading) {

@@ -15,6 +15,24 @@ describe("embedded Marketing layout flags", () => {
     });
   });
 
+  it("keeps embedded navigation hidden after a route drops the embed query", () => {
+    const entryFlags = getEmbeddedLayoutFlags({
+      search: "?embed=true&hideSidebar=true&hideTopbar=true",
+      hash: "#/lead-journal",
+    });
+
+    expect(
+      getEmbeddedLayoutFlags(
+        { search: "", hash: "#/new-lead" },
+        entryFlags,
+      ),
+    ).toEqual({
+      isEmbed: true,
+      hideSidebar: true,
+      hideTopbar: true,
+    });
+  });
+
   it("keeps the standalone Marketing sidebar visible", () => {
     expect(
       getEmbeddedLayoutFlags({
