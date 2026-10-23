@@ -39,6 +39,13 @@ export interface UnitListParams {
   offset?: number
 }
 
+export interface BranchListParams {
+  is_active?: boolean
+  search?: string
+  limit?: number
+  offset?: number
+}
+
 export const teamService = {
   listEmployees: async (params?: EmployeeListParams) => {
     return apiRequest(`/api/v1/employees/employees${toQuery(params ? { ...params } : undefined)}`)
@@ -54,5 +61,9 @@ export const teamService = {
 
   listUnits: async (params?: UnitListParams) => {
     return apiRequest(`/api/v1/employees/unit${toQuery(params ? { ...params } : undefined)}`)
+  },
+
+  listBranches: async (params?: BranchListParams) => {
+    return apiRequest(`/api/v1/branch/branches${toQuery(params ? { ...params } : undefined)}`)
   },
 }

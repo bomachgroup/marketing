@@ -134,6 +134,12 @@ export function transformBackendLead(bLead: any): Lead {
     budget: bLead.budget || bLead.budget_range || (bLead.budget_naira ? moneyLike(bLead.budget_naira) : '-'),
     stage: (bLead.stage || bLead.status || 'new') as any,
     assigned: bLead.assigned || bLead.assigned_to_name || bLead.assigned_user_name || 'Unassigned',
+    branchId: (bLead.branch_id ?? bLead.branch?.id) == null
+      ? undefined
+      : String(bLead.branch_id ?? bLead.branch?.id),
+    assignedToId: (bLead.assigned_to_id ?? bLead.assigned_to?.id) == null
+      ? undefined
+      : String(bLead.assigned_to_id ?? bLead.assigned_to?.id),
     color: bLead.color || '#DBEAFE',
     tc: bLead.tc || '#1E40AF',
     value: bLead.value || moneyLike(bLead.estimated_value || bLead.deal_value_naira, '-'),

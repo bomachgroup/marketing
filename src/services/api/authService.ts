@@ -35,6 +35,8 @@ export interface UserProfile {
   is_verified: boolean
   created_at: string
   role?: string
+  is_superuser?: boolean
+  is_staff?: boolean
 }
 
 export interface UserRoleResponse {

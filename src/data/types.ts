@@ -8,6 +8,8 @@ export interface Lead {
   budget: string
   stage: Stage
   assigned: string
+  branchId?: string
+  assignedToId?: string
   color: string
   tc: string
   value: string
