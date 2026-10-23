@@ -10,6 +10,7 @@ import { marketingService } from '../../../services/api/marketingService'
 import { teamService } from '../../../services/api/teamService'
 import { transformBackendLead } from '../../../services/transformers/marketingTransformers'
 import { transformEmployeeOptions, type EmployeeOption } from '../../../services/transformers/teamTransformers'
+import { buildLeadAssignmentPayload, transformBranchOptions, type LeadBranchOption } from './leadAssignment'
 
 const divisionOptions = [
   { value: 'real_estate', label: 'Real Estate', icon: 'building' },
@@ -85,9 +86,11 @@ export function NewLeadPage() {
   const [campaign, setCampaign] = useState('none')
   const [budget, setBudget] = useState('')
   const [assignedToId, setAssignedToId] = useState(() => user?.id ? String(user.id) : '')
+  const [branchId, setBranchId] = useState('')
   const [notes, setNotes] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [assignees, setAssignees] = useState<EmployeeOption[]>([])
+  const [branches, setBranches] = useState<LeadBranchOption[]>([])
   const [campaignOptions, setCampaignOptions] = useState<CampaignOption[]>([])
   const [lookupError, setLookupError] = useState('')
   const [isLoadingLookups, setIsLoadingLookups] = useState(true)
@@ -129,20 +132,22 @@ export function NewLeadPage() {
       setIsLoadingLookups(true)
       setLookupError('')
       try {
-        const [employeeRes, campaignRes] = await Promise.all([
+        const [employeeRes, campaignRes, branchRes] = await Promise.all([
           teamService.listEmployees({ is_active: true, limit: 100 }),
           marketingService.getCampaigns({ limit: 100 }),
+          teamService.listBranches({ is_active: true, limit: 100 }),
         ])
 
         if (!alive) return
 
-        const errors = [employeeRes.error, campaignRes.error].filter(Boolean)
+        const errors = [employeeRes.error, campaignRes.error, branchRes.error].filter(Boolean)
         if (errors.length > 0) {
           setLookupError(parseApiError(errors.join(' ')))
         }
 
         setAssignees(employeeRes.data ? transformEmployeeOptions(employeeRes.data) : [])
         setCampaignOptions(campaignRes.data ? transformCampaignOptions(campaignRes.data) : [])
+        setBranches(branchRes.data ? transformBranchOptions(branchRes.data) : [])
       } finally {
         if (alive) setIsLoadingLookups(false)
       }
@@ -182,7 +187,7 @@ export function NewLeadPage() {
         division,
         source,
         campaign_id: campaign !== 'none' ? numericId(campaign) : null,
-        assigned_to_id: assignedToId ? numericId(assignedToId) : null,
+        ...buildLeadAssignmentPayload(branchId, assignedToId),
         budget_range: budget.trim() || undefined,
         notes: notes.trim() || undefined,
       })
@@ -344,6 +349,21 @@ export function NewLeadPage() {
               </div>
 
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Branch">
+                  {isLoadingLookups ? (
+                    <SkeletonField />
+                  ) : (
+                    <Select
+                      options={[
+                        { value: '', label: 'No branch selected', icon: 'building' },
+                        ...branches,
+                      ].map((branch) => ({ ...branch, icon: 'building' }))}
+                      value={branchId}
+                      onChange={setBranchId}
+                      className="w-full"
+                    />
+                  )}
+                </Field>
                 <Field label="Budget Range">
                   <input
                     type="text"

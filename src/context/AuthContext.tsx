@@ -42,7 +42,6 @@ interface AuthContextValue {
   twoFactorToken: string | null;
   hasPermission: (resource: string, action?: string) => boolean;
   getFirstAccessibleScreen: () => string;
-  denyScreenAccess: (screen: string) => void;
   login: (
     email: string,
     pass: string,
@@ -109,6 +108,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isUserProfile(value: unknown): value is UserProfile {
+  return (
+    isRecord(value) &&
+    (typeof value.id === "number" || typeof value.id === "string") &&
+    typeof value.email === "string"
+  );
+}
+
+export function permissionsFromRoleResponse(
+  role: UserRoleResponse | null | undefined,
+): Record<string, string[]> {
+  if (!isRecord(role?.permissions)) return {};
+
+  return Object.fromEntries(
+    Object.entries(role.permissions).filter(
+      (entry): entry is [string, string[]] =>
+        Array.isArray(entry[1]) && entry[1].every((action) => typeof action === "string"),
+    ),
+  );
+}
+
 function firstString(...values: unknown[]): string {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) return value.trim();
@@ -171,8 +191,7 @@ function mapRoleNameToKey(
     str.includes("executive") ||
     str.includes("tochukwu") ||
     str.includes("anigbo") ||
-    (userProfile as any)?.is_superuser === true ||
-    (userProfile as any)?.is_staff === true
+    userProfile?.is_superuser === true
   ) {
     return "ceo";
   }
@@ -246,12 +265,12 @@ export function canAccessWithPermissions(
     return false;
   }
 
-  if (
-    Boolean(permissionMap["*"]) ||
-    Boolean(permissionMap.all) ||
-    Boolean(permissionMap["all"]) ||
-    Boolean(permissionMap["admin"])
-  ) {
+  const hasExplicitGlobalGrant = ["*", "all"].some((resourceKey) =>
+    permissionMap[resourceKey]?.some((grantedAction) =>
+      ["*", "all"].includes(grantedAction.toLowerCase()),
+    ),
+  );
+  if (hasExplicitGlobalGrant) {
     return true;
   }
 
@@ -343,17 +362,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let extracted: Record<string, string[]> = {};
       let employee: EmployeeDetailsResponse | undefined;
 
-      const isSuperOrCeo =
-        (userProfile as any).is_superuser === true ||
-        (userProfile as any).is_staff === true ||
-        Boolean(
-          `${userProfile.email} ${userProfile.first_name || ""} ${userProfile.last_name || ""} ${userProfile.username || ""} ${userProfile.role || ""}`
-            .toLowerCase()
-            .match(
-              /ceo|founder|admin|super|tochukwu|anigbo|director|executive/,
-            ),
-        );
-
       const roleRes = await authService
         .getUserRole(userProfile.id)
         .catch(() => null);
@@ -361,15 +369,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUserRole(roleRes.data);
         employee = employeeDetailsFromRole(userProfile, roleRes.data);
         setEmployeeDetails(employee);
-        extracted = roleRes.data.permissions || {};
+        extracted = permissionsFromRoleResponse(roleRes.data);
         if (roleRes.data.name) roleName = roleRes.data.name;
       } else {
-        const fallbackRoleName = isSuperOrCeo
-          ? "CEO & Founder"
-          : roleName || "Staff";
-        const fallbackPermissions: Record<string, string[]> = isSuperOrCeo
-          ? { "*": ["*"], all: ["*"] }
-          : {};
+        const fallbackRoleName = roleName || "Staff";
+        const fallbackPermissions: Record<string, string[]> = {};
 
         const fallback: UserRoleResponse = {
           id: 1,
@@ -385,22 +389,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         roleName = fallbackRoleName;
       }
 
-      if (isSuperOrCeo) {
-        extracted = { ...extracted, "*": ["*"], all: ["*"] };
-        if (!roleName) roleName = "CEO & Founder";
-      }
-
       positionStr = employee?.position || employee?.designation || "";
       setPermissions(extracted);
 
-      const activeKey = isSuperOrCeo
-        ? "ceo"
-        : mapRoleNameToKey(
-            roleName || positionStr,
-            positionStr,
-            userProfile.email,
-            userProfile,
-          );
+      const activeKey = mapRoleNameToKey(
+        roleName || positionStr,
+        positionStr,
+        userProfile.email,
+        userProfile,
+      );
       setCurrentRole(activeKey);
       const redirectTo = firstAccessibleScreen(
         activeKey,
@@ -410,17 +407,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       );
       return { activeKey, permissions: extracted, redirectTo };
     } catch {
-      const isSuperOrCeo = Boolean(
-        `${userProfile.email} ${userProfile.first_name || ""} ${userProfile.last_name || ""} ${userProfile.username || ""}`
-          .toLowerCase()
-          .match(/ceo|founder|admin|super|tochukwu|anigbo/),
+      const activeKey = mapRoleNameToKey(
+        userProfile.role || "",
+        "",
+        userProfile.email,
+        userProfile,
       );
-      const activeKey = isSuperOrCeo
-        ? "ceo"
-        : mapRoleNameToKey("", "", userProfile.email, userProfile);
-      const emptyPermissions: Record<string, string[]> = isSuperOrCeo
-        ? { "*": ["*"], all: ["*"] }
-        : {};
+      const emptyPermissions: Record<string, string[]> = {};
       setCurrentRole(activeKey);
       setPermissions(emptyPermissions);
       setEmployeeDetails(null);
@@ -677,11 +670,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
           try {
             const res = await authService.getCurrentUser();
-            const userObj =
-              res.data &&
-              ((res.data as any).id
-                ? res.data
-                : (res.data as any).user || res.data);
+            const responseData: unknown = res.data;
+            const userObj = isRecord(responseData)
+              ? isUserProfile(responseData)
+                ? responseData
+                : isUserProfile(responseData.user)
+                  ? responseData.user
+                  : null
+              : null;
             const effectiveUser =
               userObj && (userObj.id || userObj.email)
                 ? { ...effectiveProfile, ...userObj }
@@ -848,8 +844,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [currentRole, hasPermission, permissions],
   );
 
-  const denyScreenAccess = useCallback((_screen: string) => {}, []);
-
   const logout = () => {
     authService.logout().catch(() => {});
     clearAccessToken();
@@ -878,7 +872,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         twoFactorToken,
         hasPermission,
         getFirstAccessibleScreen,
-        denyScreenAccess,
         login,
         verify2FA,
         logout,

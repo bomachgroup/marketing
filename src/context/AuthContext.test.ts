@@ -1,9 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { canAccessWithPermissions } from "./AuthContext";
+import {
+  canAccessWithPermissions,
+  permissionsFromRoleResponse,
+} from "./AuthContext";
 
 describe("authenticated permission checks", () => {
   it("fails closed for a non-admin with no backend permission map", () => {
     expect(canAccessWithPermissions("dashboard", "view", "staff", {})).toBe(false);
+  });
+
+  it("does not infer global permissions from a CEO or admin role label", () => {
+    const permissions = permissionsFromRoleResponse({
+      id: 1,
+      name: "CEO & Founder",
+      permissions: { dashboard: ["view"] },
+      created_at: "",
+      updated_at: "",
+    });
+
+    expect(permissions).toEqual({ dashboard: ["view"] });
+    expect(canAccessWithPermissions("finance", "view", "ceo", permissions)).toBe(false);
+  });
+
+  it("does not treat an empty admin permission entry as a global grant", () => {
+    expect(canAccessWithPermissions("finance", "view", "ceo", { admin: [] })).toBe(false);
   });
 
   it("allows an explicitly granted view permission", () => {

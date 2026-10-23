@@ -9,6 +9,9 @@ import { transformBackendLead, transformBackendLeadActivity } from '../../servic
 import { parseApiError } from '../../services/api/apiClient'
 import { AppIcon } from '../../components/shared/AppIcon'
 import { pluralize } from '../../utils/formatters'
+import { teamService } from '../../services/api/teamService'
+import { transformEmployeeOptions, type EmployeeOption } from '../../services/transformers/teamTransformers'
+import { buildLeadAssignmentPayload, transformBranchOptions, type LeadBranchOption } from './new-lead/leadAssignment'
 
 const ACTIVITY_TYPE_OPTIONS = ['Phone Call', 'WhatsApp', 'Email', 'Meeting', 'Site Visit', 'Field Outreach', 'Social Media'].map((t) => ({ value: t, label: t }))
 const OUTCOME_OPTIONS = ['Connected', 'No Answer', 'Busy', 'Scheduled Inspection', 'Follow-up Required', 'Won / Converted'].map((o) => ({ value: o, label: o }))
@@ -78,6 +81,11 @@ export function LeadJournalPage() {
   const [editNotes, setEditNotes] = useState('')
   const [editInterests, setEditInterests] = useState('')
   const [isSavingEdit, setIsSavingEdit] = useState(false)
+  const [editBranchId, setEditBranchId] = useState('')
+  const [editAssignedToId, setEditAssignedToId] = useState('')
+  const [editBranches, setEditBranches] = useState<LeadBranchOption[]>([])
+  const [editAssignees, setEditAssignees] = useState<EmployeeOption[]>([])
+  const [isLoadingEditLookups, setIsLoadingEditLookups] = useState(true)
 
   const normalizeChoice = (value: string) =>
     value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '')
@@ -96,8 +104,29 @@ export function LeadJournalPage() {
     setEditStatus(lead.stage || 'new')
     setEditNotes('')
     setEditInterests(lead.campaign !== '-' ? lead.campaign : '')
+    setEditBranchId(lead.branchId || '')
+    setEditAssignedToId(lead.assignedToId || '')
     setIsEditOpen(true)
   }
+
+  useEffect(() => {
+    let cancelled = false
+    void Promise.all([
+      teamService.listBranches({ is_active: true, limit: 100 }),
+      teamService.listEmployees({ is_active: true, limit: 100 }),
+    ]).then(([branches, employees]) => {
+      if (cancelled) return
+      setEditBranches(branches.data ? transformBranchOptions(branches.data) : [])
+      setEditAssignees(employees.data ? transformEmployeeOptions(employees.data) : [])
+    }).catch((error: unknown) => {
+      if (!cancelled) {
+        showToast(parseApiError(error instanceof Error ? error.message : error), 'error')
+      }
+    }).finally(() => {
+      if (!cancelled) setIsLoadingEditLookups(false)
+    })
+    return () => { cancelled = true }
+  }, [showToast])
 
   const handleSaveEdit = async () => {
     if (!selectedLead) return
@@ -117,6 +146,12 @@ export function LeadJournalPage() {
         division: selectedLead.div,
         source: editSource,
         status: editStatus,
+        ...(selectedLead.branchId !== undefined || editBranchId
+          ? { branch_id: buildLeadAssignmentPayload(editBranchId, editAssignedToId).branch_id }
+          : {}),
+        ...(selectedLead.assignedToId !== undefined || editAssignedToId
+          ? { assigned_to_id: buildLeadAssignmentPayload(editBranchId, editAssignedToId).assigned_to_id }
+          : {}),
         notes: editNotes.trim() || undefined,
         budget_range: selectedLead.budget || undefined,
         next_action: selectedLead.nextAction || undefined,
@@ -751,6 +786,31 @@ export function LeadJournalPage() {
                   />
                 </div>
               </div>
+
+              {isLoadingEditLookups ? (
+                <div className="h-9 animate-pulse rounded-xl bg-surface-2" aria-label="Loading branch and employee options" />
+              ) : (
+                <div className="grid grid-cols-1 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-2 mb-1">Branch</label>
+                    <Select
+                      options={[{ value: '', label: 'No branch selected' }, ...editBranches]}
+                      value={editBranchId}
+                      onChange={setEditBranchId}
+                      fullWidth
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-text-2 mb-1">Assign to</label>
+                    <Select
+                      options={[{ value: '', label: 'Unassigned' }, ...editAssignees.map((employee) => ({ value: String(employee.id), label: employee.label }))]}
+                      value={editAssignedToId}
+                      onChange={setEditAssignedToId}
+                      fullWidth
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[11px] font-bold text-text-2 mb-1">Phone number</label>
