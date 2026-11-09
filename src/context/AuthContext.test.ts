@@ -61,4 +61,11 @@ describe("authenticated permission checks", () => {
     expect(canAccessWithPermissions("okrs", "view", "staff", permissionMap)).toBe(true);
     expect(canAccessWithPermissions("revenue-command", "create", "staff", permissionMap)).toBe(true);
   });
+
+  it("continues through equivalent backend resource aliases when an earlier alias is empty", () => {
+    expect(canAccessWithPermissions("dashboard", "view", "staff", {
+      dashboard: [],
+      marketing_dashboard: ["view"],
+    })).toBe(true);
+  });
 });

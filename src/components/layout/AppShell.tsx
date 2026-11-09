@@ -1,9 +1,8 @@
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef } from "react";
 import { Navigate, Outlet, useLocation } from "@tanstack/react-router";
 import { useAuth } from "../../context/AuthContext";
 import { ShellProvider } from "../../context/ShellContext";
-import { DISABLED_SCREENS, screenTitleFromPath } from "../../navigation";
-import LoginScreen from "./LoginScreen";
+import { DISABLED_SCREENS, normalizeMarketingPathname, screenTitleFromPath } from "../../navigation";
 import Sidebar from "./Sidebar";
 import {
   SkeletonCard,
@@ -12,9 +11,9 @@ import {
 } from "../shared/Skeletons";
 import { ShellTopbar } from "../shared/Topbar";
 import NoPermissionPage from "./NoPermissionPage";
-import { getEmbeddedLayoutFlags } from "./embeddedLayout";
-import { parentOriginFromReferrer } from "../../services/embedding/authMessage";
-import { requestFlutterNewLeadRoute } from "../../services/embedding/navigationMessage";
+import { SESSION_EXPIRED_EVENT } from "../../services/api/apiClient";
+import { sharedLoginHref } from "../../shared-host";
+import { saveWorkspaceLocation } from "../../shared/auth/workspace-memory";
 
 function AppRouteSkeleton() {
   return (
@@ -51,17 +50,17 @@ function AuthSkeleton() {
 }
 
 export default function AppShell() {
-  const { isLoggedIn, isLoading, authError, hasPermission, getFirstAccessibleScreen } =
+  const { user, isLoggedIn, isLoading, authError, hasPermission, getFirstAccessibleScreen, retrySession } =
     useAuth();
   const location = useLocation();
   const mainRef = useRef<HTMLElement>(null);
-  const currentScreen = location.pathname.replace(/^\//, "") || "dashboard";
+  const currentScreen = normalizeMarketingPathname(location.pathname).replace(/^\//, "") || "dashboard";
   const isDisabledScreen = DISABLED_SCREENS.has(currentScreen);
   const canAccess = hasPermission(currentScreen, "view");
 
   useEffect(() => {
     if (!isLoggedIn) {
-      document.title = "Sign in - Bomach OS";
+      document.title = "Marketing - Bomach OS";
       return;
     }
     document.title = screenTitleFromPath(location.pathname);
@@ -74,37 +73,38 @@ export default function AppShell() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
-  const [entryLayoutFlags] = useState(() =>
-    getEmbeddedLayoutFlags(
-      typeof window !== "undefined" ? window.location : undefined,
-    ),
-  );
-  const { isEmbed, hideSidebar, hideTopbar } = getEmbeddedLayoutFlags(
-    typeof window !== "undefined" ? window.location : undefined,
-    entryLayoutFlags,
-  );
-  const parentOrigin =
-    isEmbed && typeof document !== "undefined"
-      ? parentOriginFromReferrer(document.referrer)
-      : null;
+  useEffect(() => {
+    if (!isLoading && !isLoggedIn && !authError) {
+      window.location.replace(sharedLoginHref());
+    }
+  }, [authError, isLoading, isLoggedIn]);
 
   useEffect(() => {
-    if (!isEmbed || !parentOrigin || typeof window === "undefined") return;
-    requestFlutterNewLeadRoute(location.pathname, window.parent, parentOrigin);
-  }, [isEmbed, location.pathname, parentOrigin]);
+    if (!user || !isLoggedIn) return;
+    const actualPath = window.location.pathname.startsWith("/marketing")
+      ? window.location.pathname
+      : `/marketing${window.location.pathname}`;
+    saveWorkspaceLocation(user.id, "marketing", `${actualPath}${window.location.search}${window.location.hash}`);
+  }, [isLoggedIn, location.href, user]);
+
+  useEffect(() => {
+    const expireSession = () => window.location.assign(sharedLoginHref());
+    window.addEventListener(SESSION_EXPIRED_EVENT, expireSession);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, expireSession);
+  }, []);
 
   if (isLoading) {
     return <AuthSkeleton />;
   }
 
-  if (!isLoggedIn && !isEmbed) {
-    return <LoginScreen />;
-  }
-
-  if (!isLoggedIn && isEmbed && authError) {
+  if (!isLoggedIn && authError) {
     return (
-      <div role="alert" className="flex min-h-screen items-center justify-center bg-white p-6 text-center text-sm font-semibold text-red-800">
-        {authError}
+      <div role="alert" className="flex min-h-screen items-center justify-center bg-white p-6">
+        <div className="max-w-md space-y-4 rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-lg font-semibold text-slate-900">Can’t verify your session</h1>
+          <p className="text-sm text-slate-600">{authError}</p>
+          <button type="button" onClick={retrySession} className="rounded-xl bg-navy px-4 py-2.5 text-sm font-semibold text-white">Try again</button>
+        </div>
       </div>
     );
   }
@@ -116,14 +116,10 @@ export default function AppShell() {
   return (
     <ShellProvider>
       <div className="flex h-dvh min-h-screen w-full overflow-hidden bg-bg">
-        {!hideSidebar && <Sidebar />}
+        <Sidebar />
 
         <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
-          {!hideTopbar && (
-            <ShellTopbar
-              fallbackTitle={screenTitleFromPath(location.pathname)}
-            />
-          )}
+          <ShellTopbar fallbackTitle={screenTitleFromPath(location.pathname)} />
           <main
             ref={mainRef}
             className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"

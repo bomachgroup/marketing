@@ -11,6 +11,8 @@ import { Modal, HighlightText } from '../shared'
 import { AppIcon } from '../shared/AppIcon'
 import { capitalizeName } from '../../data/helpers'
 import { fuzzyMatch } from '../../utils/fuzzySearch'
+import AppSwitcher from '../shared/AppSwitcher'
+import { normalizeMarketingPathname } from '../../navigation'
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -40,6 +42,7 @@ export default function Sidebar() {
   const { mobileOpen, setMobileOpen, sidebarCollapsed, setSidebarCollapsed } = useShell()
   const navigate = useNavigate()
   const location = useLocation()
+  const activePath = normalizeMarketingPathname(location.pathname)
 
   const navGroups = useMemo(() => {
     return accessibleNavGroups(currentRole, permissions, hasPermission)
@@ -47,7 +50,7 @@ export default function Sidebar() {
 
   // Find which group contains the active route
   const activeGroup = navGroups.find((g) =>
-    g.items.some((item) => location.pathname === `/${item.s}`)
+    g.items.some((item) => activePath === `/${item.s}`)
   )?.g ?? navGroups[0]?.g
 
   const [openGroup, setOpenGroup] = useState<string>(activeGroup)
@@ -59,13 +62,13 @@ export default function Sidebar() {
   // Keep the active group open when route changes
   useEffect(() => {
     const current = navGroups.find((g) =>
-      g.items.some((item) => location.pathname === `/${item.s}`)
+      g.items.some((item) => activePath === `/${item.s}`)
     )?.g
     const timer = window.setTimeout(() => {
       if (current) setOpenGroup(current)
     }, 0)
     return () => window.clearTimeout(timer)
-  }, [location.pathname, navGroups])
+  }, [activePath, navGroups])
 
   // Close notif dropdown on outside click
   useEffect(() => {
@@ -209,6 +212,7 @@ export default function Sidebar() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Brand header */}
       <div className="flex h-14 shrink-0 items-center gap-2 px-4">
+        <AppSwitcher compact placement="left" />
         <div
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-navy text-sm font-bold text-white shadow-sm"
           style={{ fontFamily: 'var(--font-heading)' }}
@@ -487,6 +491,10 @@ export default function Sidebar() {
         B
       </div>
 
+      <Tooltip label="Switch workspace">
+        <AppSwitcher compact placement="left" />
+      </Tooltip>
+
       {/* Expand button */}
       <Tooltip label="Expand sidebar">
         <button
@@ -520,7 +528,7 @@ export default function Sidebar() {
         {navGroups.map((group) => {
           const firstItem = group.items[0]
           if (!firstItem) return null
-          const isGroupActive = group.items.some((item) => location.pathname === `/${item.s}`)
+          const isGroupActive = group.items.some((item) => activePath === `/${item.s}`)
           return (
             <Tooltip key={group.g} label={group.g}>
               <button

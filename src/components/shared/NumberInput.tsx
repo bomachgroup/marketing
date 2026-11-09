@@ -1,5 +1,6 @@
 ﻿import React, { useRef, useLayoutEffect } from 'react';
 
+/* eslint-disable react-refresh/only-export-components */
 export function stripCommas(value: string | number | null | undefined): string {
   if (value === null || value === undefined) return '';
   return String(value).replace(/,/g, '').trim();

@@ -4,6 +4,7 @@ import { useShell } from "../../context/ShellContext";
 import { useAuth } from "../../context/AuthContext";
 import { AppIcon } from "./AppIcon";
 import { Select, type SelectOption } from "./Select";
+import AppSwitcher from "./AppSwitcher";
 
 interface TopbarProps {
   title: string;
@@ -111,6 +112,10 @@ export function ShellTopbar({ fallbackTitle }: { fallbackTitle: string }) {
       >
         <AppIcon name="hamberger-menu" size={18} />
       </button>
+
+      <div className="md:hidden">
+        <AppSwitcher compact />
+      </div>
 
       <div
         className="min-w-0 flex-1 basis-[calc(100%-2.5rem)] truncate text-[15px] font-bold text-text sm:basis-auto"

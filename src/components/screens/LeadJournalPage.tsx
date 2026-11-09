@@ -36,6 +36,14 @@ const PIPELINE_STAGE_OPTIONS = [
   ...LEAD_STAGE_OPTIONS,
 ]
 
+function responseItems(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'object' || value === null) return null
+
+  const items = (value as Record<string, unknown>).items
+  return Array.isArray(items) ? items : null
+}
+
 function invalidNextFollowUpDate(value: string) {
   if (!value) return false
   const selected = new Date(`${value}T00:00:00`)
@@ -178,8 +186,9 @@ export function LeadJournalPage() {
       setIsLoadingLeads(true)
       try {
         const res = await marketingService.getLeads()
-        if (res.data && Array.isArray(res.data.items || res.data)) {
-          const apiLeads = (res.data.items || res.data).map(transformBackendLead)
+        const rawLeads = responseItems(res.data)
+        if (rawLeads) {
+          const apiLeads = rawLeads.map(transformBackendLead)
           setBackendLeadIds(apiLeads.map((lead: Lead) => String(lead.id)))
           setLeads(apiLeads)
           if (apiLeads.length > 0) {
@@ -209,9 +218,9 @@ export function LeadJournalPage() {
       try {
         const res = await marketingService.getLeadActivities(selectedLead.id, { limit: 100 })
         if (res.data) {
-          const rawItems = res.data.items || res.data
-          if (Array.isArray(rawItems)) {
-            const activities = rawItems.map(transformBackendLeadActivity)
+          const rawActivities = responseItems(res.data)
+          if (rawActivities) {
+            const activities = rawActivities.map(transformBackendLeadActivity)
             const updated = { ...selectedLead, activities }
             setLeads(leads.map((l) => (l.id === selectedLead.id ? updated : l)))
             setSelectedLead(updated)

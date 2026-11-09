@@ -23,6 +23,14 @@ interface OpsState {
 
 type GenericState = Record<string, unknown>
 
+function responseItems(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value
+  if (typeof value !== 'object' || value === null) return null
+
+  const items = (value as Record<string, unknown>).items
+  return Array.isArray(items) ? items : null
+}
+
 interface StoreState {
   leads: Lead[]
   tickets: SupportTicket[]
@@ -198,17 +206,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ])
 
         if (leadsResult.status === 'fulfilled' && leadsResult.value?.data) {
-          const rawItems = leadsResult.value.data.items || leadsResult.value.data
-          if (Array.isArray(rawItems)) {
-            const apiLeads = rawItems.map(transformBackendLead)
+          const rawLeads = responseItems(leadsResult.value.data)
+          if (rawLeads) {
+            const apiLeads = rawLeads.map(transformBackendLead)
             setState((prev) => ({ ...prev, leads: apiLeads }))
           }
         }
 
         if (campResult.status === 'fulfilled' && campResult.value?.data) {
-          const rawCamps = campResult.value.data.items || campResult.value.data
-          if (Array.isArray(rawCamps)) {
-            const apiCamps = rawCamps.map(transformBackendCampaign)
+          const rawCampaigns = responseItems(campResult.value.data)
+          if (rawCampaigns) {
+            const apiCamps = rawCampaigns.map(transformBackendCampaign)
             setState((prev) => ({
               ...prev,
               c4State: { ...prev.c4State, campaigns: apiCamps },

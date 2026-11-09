@@ -9,7 +9,7 @@ This tracker only covers the pages currently in scope. Each `Remaining APIs` sec
 - API writes must succeed before local UI state changes.
 - Parse backend errors before showing them in toasts, dialogs, banners, or inline messages.
 - Prefer OpenAPI-confirmed endpoints and schemas.
-- Use `bun run tsc -b --noEmit` for type checks. Do not run `npm run build`; use `bun build` only when necessary.
+- Use `npm run typecheck` for type checks and `npm run build` for the production build.
 - Remaining API categories: `Actionable Now` can be wired into existing controls; `Deferred UI` needs a future product workflow; `Used Elsewhere` is already implemented on another page; `Redundant/Superseded` is intentionally not used because a richer or safer endpoint already drives the UI; `Backend Gap` needs backend endpoints, schemas, or missing-record behavior fixed first.
 
 ## My Work Desk

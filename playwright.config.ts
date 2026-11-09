@@ -7,15 +7,25 @@ export default defineConfig({
     timeout: 5_000,
   },
   use: {
-    baseURL: 'http://127.0.0.1:5178',
+    baseURL: 'http://127.0.0.1:5173',
     trace: 'on-first-retry',
   },
-  webServer: {
-    command: 'bun run dev -- --host 127.0.0.1 --port 5178',
-    url: 'http://127.0.0.1:5178',
-    reuseExistingServer: true,
-    timeout: 120_000,
-  },
+  webServer: [
+    {
+      command: 'npm run dev -- --host 127.0.0.1',
+      cwd: '../bomach_os_react_port',
+      url: 'http://127.0.0.1:5173',
+      reuseExistingServer: true,
+      timeout: 120_000,
+    },
+    {
+      command: './node_modules/.bin/vite --mode shared --host 127.0.0.1',
+      cwd: '.',
+      url: 'http://127.0.0.1:5177/marketing/',
+      reuseExistingServer: true,
+      timeout: 120_000,
+    },
+  ],
   projects: [
     {
       name: 'mobile-chromium',

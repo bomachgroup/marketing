@@ -1,6 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setApiBaseUrl } from "./apiClient";
-import { clearAccessToken, setAccessToken } from "./authTokenStore";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PerformanceApiError,
   getMyTargets,
@@ -8,8 +6,6 @@ import {
   getRoleTargetTemplates,
   listRoles,
 } from "./performanceApi";
-
-const baseUrl = "https://bomachauthtest.bgbot.app";
 
 function response(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -19,17 +15,11 @@ function response(body: unknown, status = 200): Response {
 }
 
 describe("performance API adapter", () => {
-  beforeEach(() => {
-    setApiBaseUrl(baseUrl);
-    setAccessToken("test-access-token");
-  });
-
   afterEach(() => {
     vi.unstubAllGlobals();
-    clearAccessToken();
   });
 
-  it("lists roles using the supported roles endpoint and authorization", async () => {
+  it("lists roles using the same-origin endpoint and cookie credentials", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       response({
         results: [
@@ -44,13 +34,12 @@ describe("performance API adapter", () => {
     ]);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      `${baseUrl}/api/v1/roles/`,
-      expect.objectContaining({
-        headers: expect.objectContaining({
-          Authorization: "Bearer test-access-token",
-        }),
-      }),
+      "/api/v1/roles/",
+      expect.objectContaining({ credentials: "include", cache: "no-store" }),
     );
+    const requestHeaders = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect(requestHeaders.get('Accept')).toBe('application/json');
+    expect(requestHeaders.has('Authorization')).toBe(false);
   });
 
   it("maps role KPIs and target templates from supported envelopes", async () => {

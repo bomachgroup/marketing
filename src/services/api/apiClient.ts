@@ -1,112 +1,31 @@
-import {
-  clearAccessToken,
-  clearRefreshToken,
-  getAccessToken,
-  getRefreshToken,
-  setAccessToken,
-} from "./authTokenStore";
+export const API_PREFIX = "/api/v1";
+export const SESSION_ESTABLISHED_KEY = "bomach:session-established";
+export const SESSION_EXPIRED_EVENT = "bomach:session-expired";
+const LEGACY_AUTH_KEYS = [
+  "bomach_access_token_v1",
+  "bomach_refresh_token_v1",
+  "bomach_access_token",
+  "bomach_refresh_token",
+  "bomachOS_v3_auth",
+  "bomach_api_base_url",
+  "apiBaseUrl",
+  "backendUrl",
+];
+export const BROWSER_REQUEST_HEADER = "X-Bomach-Request";
+export const BROWSER_REQUEST_VALUE = "browser";
 
-let cachedApiBaseUrl: string | null = null;
+let refreshPromise: Promise<boolean> | null = null;
 
-export function setApiBaseUrl(url: string) {
-  if (!url) return;
-  cachedApiBaseUrl = url
-    .trim()
-    .replace(/\/+$/, "")
-    .replace(/\/api\/v1\/?$/, "");
+export function clearLegacyStoredAuth(): void {
+  if (typeof window === "undefined") return;
   try {
-    sessionStorage.setItem("bomach_api_base_url", cachedApiBaseUrl);
-    localStorage.setItem("bomach_api_base_url", cachedApiBaseUrl);
-  } catch {}
-}
-
-export function extractSearchParams(): URLSearchParams {
-  if (typeof window === "undefined") return new URLSearchParams();
-  const combined = new URLSearchParams(window.location.search || "");
-  if (window.location.hash) {
-    const qIdx = window.location.hash.indexOf("?");
-    if (qIdx !== -1) {
-      const hashParams = new URLSearchParams(
-        window.location.hash.substring(qIdx),
-      );
-      hashParams.forEach((val, key) => {
-        if (!combined.has(key)) {
-          combined.set(key, val);
-        }
-      });
+    for (const key of LEGACY_AUTH_KEYS) {
+      window.localStorage.removeItem(key);
+      window.sessionStorage.removeItem(key);
     }
+  } catch {
+    // Browser storage is not required for cookie authentication.
   }
-  return combined;
-}
-
-function isLiveShellOrigin(originOrUrl: string): boolean {
-  const lower = originOrUrl.toLowerCase();
-  return (
-    lower.includes("bomachosapp") ||
-    lower.includes("bomach-os-app") ||
-    lower.includes("bomachauthapp") ||
-    lower.includes("bomachauth.bgbot.app")
-  );
-}
-
-export function getApiBaseUrl(): string {
-  if (cachedApiBaseUrl) {
-    return cachedApiBaseUrl;
-  }
-
-  if (typeof window !== "undefined") {
-    const searchParams = extractSearchParams();
-    const override =
-      searchParams.get("apiBaseUrl") ||
-      searchParams.get("backendUrl") ||
-      searchParams.get("apiUrl") ||
-      searchParams.get("authBaseUrl");
-    if (override) {
-      const clean = override
-        .trim()
-        .replace(/\/+$/, "")
-        .replace(/\/api\/v1\/?$/, "");
-      setApiBaseUrl(clean);
-      return clean;
-    }
-
-    try {
-      const stored =
-        sessionStorage.getItem("bomach_api_base_url") ||
-        localStorage.getItem("bomach_api_base_url");
-      if (stored) {
-        cachedApiBaseUrl = stored;
-        return stored;
-      }
-    } catch {}
-
-    const hostname = window.location.hostname.toLowerCase();
-    const referrer = (document.referrer || "").toLowerCase();
-
-    // The ONLY time live backend is used is when viewing from the live shell
-    let isLiveEnvironment = isLiveShellOrigin(hostname) || isLiveShellOrigin(referrer);
-
-    try {
-      const ancestors = (window.location as any).ancestorOrigins;
-      if (ancestors && ancestors.length > 0) {
-        for (let i = 0; i < ancestors.length; i++) {
-          if (isLiveShellOrigin(ancestors[i])) {
-            isLiveEnvironment = true;
-            break;
-          }
-        }
-      }
-    } catch {}
-
-    if (isLiveEnvironment) {
-      return "https://bomachauth.bgbot.app";
-    }
-
-    // In all other cases (standalone on its own, localhost, test shell), use test backend
-    return "https://bomachauthtest.bgbot.app";
-  }
-
-  return "https://bomachauthtest.bgbot.app";
 }
 
 export interface ApiResponse<T = unknown> {
@@ -225,129 +144,120 @@ export function parseApiError(err: unknown): string {
   return String(err);
 }
 
-type RefreshTokenResponse = {
-  access_token?: string;
-};
-
-let refreshPromise: Promise<string | null> | null = null;
-
-function shouldAttemptRefresh(endpoint: string) {
+function shouldAttemptRefresh(endpoint: string): boolean {
+  const normalized = endpoint.replace(/^\/api\/v1/, "");
   return ![
-    "/api/v1/auth/login",
-    "/api/v1/auth/verify-2fa",
-    "/api/v1/auth/refresh",
-    "/api/v1/auth/logout",
-  ].some((authEndpoint) => endpoint.startsWith(authEndpoint));
+    "/auth/browser/login",
+    "/auth/browser/verify-2fa",
+    "/auth/browser/refresh",
+    "/auth/browser/logout",
+  ].some((authEndpoint) => normalized.startsWith(authEndpoint));
 }
 
-async function fetchReadWithRetry(
-  input: RequestInfo | URL,
-  init: RequestInit,
-): Promise<Response> {
+function announceExpiredSession(): void {
+  if (typeof window === "undefined") return;
   try {
-    return await fetch(input, init);
-  } catch (error) {
-    await new Promise((resolve) => window.setTimeout(resolve, 250));
-    return fetch(input, init).catch(() => {
-      throw error;
-    });
+    const hadSession = window.sessionStorage.getItem(SESSION_ESTABLISHED_KEY) === "1";
+    window.sessionStorage.removeItem(SESSION_ESTABLISHED_KEY);
+    if (hadSession) window.dispatchEvent(new CustomEvent(SESSION_EXPIRED_EVENT));
+  } catch {
+    // Session storage is optional; the auth provider still handles request failures.
   }
 }
 
-export async function refreshAccessTokenFromCookie(): Promise<string | null> {
+async function refreshBrowserSession(): Promise<boolean> {
   if (refreshPromise) return refreshPromise;
 
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    clearAccessToken();
-    return null;
-  }
-
-  refreshPromise = fetch(`${getApiBaseUrl()}/api/v1/auth/refresh`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  })
-    .then(async (response) => {
-      if (!response.ok) {
-        clearAccessToken();
-        clearRefreshToken();
-        return null;
-      }
-
-      const data = (await response.json()) as RefreshTokenResponse;
-      if (!data.access_token) {
-        clearAccessToken();
-        return null;
-      }
-
-      setAccessToken(data.access_token);
-      return data.access_token;
-    })
-    .catch(() => {
-      clearAccessToken();
-      return null;
-    })
-    .finally(() => {
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_PREFIX}/auth/browser/refresh`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          [BROWSER_REQUEST_HEADER]: BROWSER_REQUEST_VALUE,
+        },
+        credentials: "include",
+        cache: "no-store",
+      });
+      if (response.ok) return true;
+      if ([400, 401, 403].includes(response.status)) announceExpiredSession();
+      return false;
+    } catch {
+      return false;
+    } finally {
       refreshPromise = null;
-    });
+    }
+  })();
 
   return refreshPromise;
 }
 
-// Most wrappers in this codebase consume broad backend response shapes and narrow them in transformers.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function normalizeEndpoint(endpoint: string): string {
-  const [path, query] = endpoint.split("?");
-  // Auth endpoints and files must not have trailing slashes
-  if (path.includes("/auth/") || path.includes(".")) {
-    return query ? `${path}?${query}` : path;
+export function normalizeEndpoint(endpoint: string): string {
+  if (/^(?:[a-z]+:)?\/\//i.test(endpoint)) {
+    throw new Error("Marketing API requests must use the shared Bomach host.");
   }
-  const normalizedPath = path.endsWith("/") ? path : `${path}/`;
-  return query ? `${normalizedPath}?${query}` : normalizedPath;
+
+  const queryIndex = endpoint.indexOf("?");
+  const rawPath = queryIndex === -1 ? endpoint : endpoint.slice(0, queryIndex);
+  const query = queryIndex === -1 ? "" : endpoint.slice(queryIndex);
+  let path = rawPath === API_PREFIX || rawPath.startsWith(`${API_PREFIX}/`)
+    ? rawPath.slice(API_PREFIX.length)
+    : rawPath;
+  if (!path.startsWith("/")) path = `/${path}`;
+  if (!path.includes("/auth/") && !path.includes(".") && !path.endsWith("/")) path += "/";
+  return `${API_PREFIX}${path}${query}`;
 }
 
-export async function apiRequest<T = any>(
+function requestHeaders(options: RequestInit, isMultipart = false): Headers {
+  const headers = new Headers(options.headers);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  if (!isMultipart && options.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+  const method = (options.method || "GET").toUpperCase();
+  if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
+    headers.set(BROWSER_REQUEST_HEADER, BROWSER_REQUEST_VALUE);
+  }
+  return headers;
+}
+
+async function sendRequest(endpoint: string, options: RequestInit): Promise<Response> {
+  const url = normalizeEndpoint(endpoint);
+  const isMultipart = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const init: RequestInit = {
+    ...options,
+    headers: requestHeaders(options, isMultipart),
+    credentials: "include",
+    cache: "no-store",
+  };
+  let response = await fetch(url, init);
+
+  if (response.status === 401 && shouldAttemptRefresh(endpoint)) {
+    const refreshed = await refreshBrowserSession();
+    if (refreshed && !options.signal?.aborted) {
+      response = await fetch(url, { ...init, headers: requestHeaders(options, isMultipart) });
+    }
+    if (response.status === 401) announceExpiredSession();
+  }
+
+  return response;
+}
+
+export async function apiRequest<T = unknown>(
   endpoint: string,
   options: RequestInit = {},
   retryOnUnauthorized = true,
 ): Promise<ApiResponse<T>> {
-  const token = getAccessToken();
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(options.headers as Record<string, string>),
-  };
-
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const url = `${getApiBaseUrl()}${normalizeEndpoint(endpoint)}`;
-
   try {
-    const requestInit = {
-      ...options,
-      headers,
-      credentials: options.credentials || "include",
-    } satisfies RequestInit;
-    const method = (options.method || "GET").toUpperCase();
-    const response = await (method === "GET" || method === "HEAD"
-      ? fetchReadWithRetry(url, requestInit)
-      : fetch(url, requestInit));
-
-    if (
-      response.status === 401 &&
-      retryOnUnauthorized &&
-      shouldAttemptRefresh(endpoint)
-    ) {
-      const refreshedToken = await refreshAccessTokenFromCookie();
-      if (refreshedToken) {
-        return apiRequest<T>(endpoint, options, false);
-      }
-    }
+    const isMultipart = typeof FormData !== "undefined" && options.body instanceof FormData;
+    const response = retryOnUnauthorized
+      ? await sendRequest(endpoint, options)
+      : await fetch(normalizeEndpoint(endpoint), {
+          ...options,
+          headers: requestHeaders(options, isMultipart),
+          credentials: "include",
+          cache: "no-store",
+        });
 
     const status = response.status;
     if (status === 204) {
@@ -383,43 +293,26 @@ export async function apiRequest<T = any>(
 }
 
 // Multipart requests must let the browser set Content-Type with the boundary.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function apiFormRequest<T = any>(
+export async function apiFormRequest<T = unknown>(
   endpoint: string,
   formData: FormData,
   options: Omit<RequestInit, "body"> = {},
   retryOnUnauthorized = true,
 ): Promise<ApiResponse<T>> {
-  const token = getAccessToken();
-  const headers: Record<string, string> = {
-    ...(options.headers as Record<string, string>),
-  };
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const url = `${getApiBaseUrl()}${normalizeEndpoint(endpoint)}`;
-
   try {
-    const response = await fetch(url, {
+    const requestOptions: RequestInit = {
       ...options,
       method: options.method || "POST",
       body: formData,
-      headers,
-      credentials: options.credentials || "include",
-    });
-
-    if (
-      response.status === 401 &&
-      retryOnUnauthorized &&
-      shouldAttemptRefresh(endpoint)
-    ) {
-      const refreshedToken = await refreshAccessTokenFromCookie();
-      if (refreshedToken) {
-        return apiFormRequest<T>(endpoint, formData, options, false);
-      }
-    }
+    };
+    const response = retryOnUnauthorized
+      ? await sendRequest(endpoint, requestOptions)
+      : await fetch(normalizeEndpoint(endpoint), {
+          ...requestOptions,
+          headers: requestHeaders(requestOptions, true),
+          credentials: "include",
+          cache: "no-store",
+        });
 
     const status = response.status;
     if (status === 204) {

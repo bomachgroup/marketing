@@ -1,1 +1,43 @@
-{"rewrites": [{"source": "/(.*)", "destination": "/"}]}
+{
+  "redirects": [
+    {
+      "source": "/",
+      "destination": "https://bomach-os.vercel.app/marketing/",
+      "permanent": false
+    },
+    {
+      "source": "/marketing",
+      "destination": "https://bomach-os.vercel.app/marketing/",
+      "permanent": false
+    },
+    {
+      "source": "/marketing/:path*",
+      "destination": "https://bomach-os.vercel.app/marketing/:path*",
+      "permanent": false
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/__bomach_shared/marketing/assets/:path*",
+      "destination": "/assets/:path*"
+    },
+    {
+      "source": "/__bomach_shared/marketing/favicon.svg",
+      "destination": "/favicon.svg"
+    },
+    {
+      "source": "/__bomach_shared/marketing/icons.svg",
+      "destination": "/icons.svg"
+    },
+    {
+      "source": "/__bomach_shared/marketing/:path*",
+      "destination": "/index.html"
+    },
+    { "source": "/marketing/assets/(.*)", "destination": "/assets/$1" },
+    { "source": "/marketing/favicon.svg", "destination": "/favicon.svg" },
+    { "source": "/marketing/icons.svg", "destination": "/icons.svg" },
+    { "source": "/marketing", "destination": "/index.html" },
+    { "source": "/marketing/(.*)", "destination": "/index.html" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

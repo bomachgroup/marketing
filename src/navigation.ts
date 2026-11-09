@@ -102,6 +102,24 @@ export function firstAccessibleScreen(
 }
 
 export function screenTitleFromPath(pathname: string): string {
-  const seg = pathname.replace(/^\//, "");
+  const seg = normalizeMarketingPathname(pathname).replace(/^\//, "");
   return SCREEN_TITLES[seg] ?? seg;
+}
+
+export function normalizeMarketingPathname(pathname: string): string {
+  if (pathname === "/marketing") return "/";
+  if (pathname.startsWith("/marketing/")) return pathname.slice("/marketing".length);
+  return pathname;
+}
+
+export function isMarketingWorkspacePath(pathname: string): boolean {
+  return pathname === "/marketing" || pathname.startsWith("/marketing/");
+}
+
+export function hasAccessibleMarketingDestination(
+  roleKey: string,
+  permissions: Record<string, string[]>,
+  hasPermission: (resource: string, action?: string) => boolean,
+): boolean {
+  return accessibleNavGroups(roleKey, permissions, hasPermission).length > 0;
 }

@@ -11,23 +11,15 @@ The app covers the CEO/marketing workspace across workdesk, lead management, cam
 - Vite 8
 - Tailwind CSS 4
 - TanStack Router
-- Bun package manager
+- npm package manager
 - Playwright for E2E smoke tests
 - ESLint for static checks
 
-## Backend
+## Shared Host and Authentication
 
-The API client defaults to:
+Marketing is independently built and deployed, then served under `/marketing/*` by the Bomach OS front door. Its API client uses same-origin `/api/v1` requests and the shared HTTP-only browser session; Bomach OS owns login, two-factor verification, and session expiry. Do not configure a browser API-origin override or use Marketing's standalone Vercel domain to test shared authentication.
 
-```txt
-https://bomachauthtest.bgbot.app
-```
-
-Override it with:
-
-```env
-VITE_API_BASE_URL=https://your-api-host
-```
+For local shared-host testing, open Marketing through `http://localhost:5173/marketing/...`. The Vite server on port `5177` is the upstream app behind the OS proxy, not the shared-cookie entry point.
 
 The local OpenAPI reference is stored in:
 
@@ -44,34 +36,49 @@ BACKEND_CONTRACT_GAPS.md
 
 ## Getting Started
 
-Install dependencies with Bun:
+Install dependencies with npm:
 
 ```bash
-bun install
+npm install
 ```
 
-Start the dev server:
+For the full local shared-host flow, run the backend, OS front door, and product apps in separate terminals:
 
 ```bash
-bun run dev
+# Terminal 1: from bomach_os_backend
+source .venv/bin/activate
+python manage.py runserver
+
+# Terminal 2: from bomach_os_frontend/bomach_os_react_port
+npm run dev
+
+# Terminal 3: from bomach_os_frontend/marketing
+npm run dev:shared
+
+# Optional Terminal 4: from bomach_os_frontend/services
+npm run dev:shared
 ```
+
+Open `http://localhost:5173/marketing/`. The OS Vite server proxies `/api` to Django and `/marketing` to Marketing on port `5177`. Services uses port `5175` in shared mode. The default local browser-auth origins already include `http://localhost:5173` and `http://127.0.0.1:5173` when Django `DEBUG` is enabled.
+
+You can run Marketing alone for component work with `npm run dev:shared`; use the OS front door for end-to-end login, cookies, and app switching.
 
 Build the app:
 
 ```bash
-bun run build
+npm run build
 ```
 
 Run lint:
 
 ```bash
-bun run lint
+npm run lint
 ```
 
 Run E2E tests:
 
 ```bash
-bun run test:e2e
+npm run test:e2e
 ```
 
 ## Project Structure
@@ -113,16 +120,14 @@ src/
 
 ## Auth and Permissions
 
-Authentication is JWT-based. Access and refresh tokens are stored through the app token store and attached by `src/services/api/apiClient.ts`.
-
-Navigation is permission-aware. Sidebar routes are filtered through `src/navigation.ts`, using the authenticated role and backend permission map so users should only see pages they can access.
+Marketing bootstraps the current user and permission map from `/api/v1/auth/me`. Navigation and workspace-switcher visibility use those backend grants; backend authorization remains authoritative. Failed unauthenticated requests may refresh the shared browser session once, then return the user to Bomach OS login with the safe Marketing path preserved.
 
 ## Development Notes
 
-- Use Bun for dependency installation and project scripts.
-- Do not use `npm install`; the project enforces Bun during install.
+- Use npm for dependency installation and project scripts.
 - Keep backend writes success-first: update UI state only after the API call succeeds.
 - Avoid demo or local-only fallback data on production-facing pages.
+- Use the Bomach OS front door at `http://localhost:5173` for shared-session testing; opening `http://localhost:5177` directly does not test the shared host.
 - Disabled controls usually indicate confirmed backend gaps rather than unfinished UI polish.
 - Keep wide tables and matrices scrollable inside their own containers, not at the body level.
 
@@ -131,15 +136,8 @@ Navigation is permission-aware. Sidebar routes are filtered through `src/navigat
 Before pushing material frontend changes:
 
 ```bash
-bun run build
-bun run lint
-```
-
-When Bun is unavailable in the local shell, the equivalent local binaries are:
-
-```bash
-.\node_modules\.bin\tsc.cmd -b --noEmit --pretty false
-.\node_modules\.bin\eslint.cmd .
+npm run build
+npm run lint
 ```
 
 ## Repository

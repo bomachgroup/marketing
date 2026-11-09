@@ -7,6 +7,7 @@ import { parseApiError } from '../../../services/api/apiClient'
 import { transformCampaignPanel, transformCampaignWorkspace } from '../../../services/transformers/marketingTransformers'
 import type { Campaign } from '../../../data/types'
 import { AppIcon } from '../../shared/AppIcon'
+import { CampaignPublicPagePanel } from './CampaignPublicPagePanel'
 
 type WorkspaceState = ReturnType<typeof transformCampaignWorkspace> | null
 type BackendRecord = Record<string, unknown>
@@ -42,6 +43,7 @@ function listFrom(value: unknown): unknown[] {
   const data = recordOf(value)
   if (Array.isArray(data.items)) return data.items
   if (Array.isArray(data.results)) return data.results
+  if (Array.isArray(data.requests)) return data.requests
   if (Array.isArray(data.data)) return data.data
   return []
 }
@@ -81,6 +83,7 @@ export function CampaignsPage() {
   const [workspace, setWorkspace] = useState<WorkspaceState>(null)
   const [workspaceError, setWorkspaceError] = useState('')
   const [workspaceAction, setWorkspaceAction] = useState('task')
+  const [workspaceTab, setWorkspaceTab] = useState<'activity' | 'public-page'>('activity')
   const [taskTitle, setTaskTitle] = useState('')
   const [updateText, setUpdateText] = useState('')
   const [expenseForm, setExpenseForm] = useState({ vendor: '', amount: '' })
@@ -156,8 +159,7 @@ export function CampaignsPage() {
 
       const reqRes = await marketingService.getCampaignRequests()
       if (reqRes.data) {
-        const rawRequests = reqRes.data.items || reqRes.data.results || reqRes.data.requests || reqRes.data || []
-        setRequests(Array.isArray(rawRequests) ? rawRequests : [])
+        setRequests(listFrom(reqRes.data).map(recordOf))
       }
     } finally {
       setIsLoading(false)
@@ -309,6 +311,7 @@ export function CampaignsPage() {
     }
 
     setWorkspaceCampaign(campaign)
+    setWorkspaceTab('activity')
     setWorkspace(null)
     setWorkspaceError('')
     const res = await marketingService.getCampaignWorkspace(campaign.id)
@@ -657,12 +660,25 @@ export function CampaignsPage() {
         )}
         {workspace && (
           <div className="space-y-4">
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 gap-3 min-[520px]:grid-cols-2 min-[1100px]:grid-cols-3">
               <MetricCard label="Budget Spent" value={formatMoney(workspace.campaign.spent)} sub={`${workspace.campaign.budget ? Math.round((workspace.campaign.spent / workspace.campaign.budget) * 100) : 0}% of ${formatMoney(workspace.campaign.budget)}`} />
               <MetricCard label="Leads Generated" value={workspace.campaign.leads} sub={workspace.campaign.cpl} />
-              <MetricCard label="Status" value={normalizeStatus(workspace.campaign.status)} sub={workspace.campaign.owner || 'Owner pending'} />
+              <MetricCard className="min-[520px]:col-span-2 min-[1100px]:col-span-1" label="Status" value={normalizeStatus(workspace.campaign.status)} sub={workspace.campaign.owner || 'Owner pending'} />
             </div>
 
+            <div className="flex gap-1 border-b border-border/80 pb-2" role="tablist" aria-label="Campaign workspace sections">
+              <button type="button" role="tab" aria-selected={workspaceTab === 'activity'} onClick={() => setWorkspaceTab('activity')} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${workspaceTab === 'activity' ? 'bg-navy text-white' : 'text-text-3 hover:bg-surface-1 hover:text-text'}`}>Workspace activity</button>
+              <button type="button" role="tab" aria-selected={workspaceTab === 'public-page'} onClick={() => setWorkspaceTab('public-page')} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold ${workspaceTab === 'public-page' ? 'bg-navy text-white' : 'text-text-3 hover:bg-surface-1 hover:text-text'}`}>Public page & leads</button>
+            </div>
+
+            {workspaceTab === 'public-page' && workspaceCampaign?.id ? (
+              <CampaignPublicPagePanel
+                key={String(workspaceCampaign.id)}
+                campaignId={workspaceCampaign.id}
+                campaignName={workspaceCampaign.name}
+                campaignStatus={workspaceCampaign.status}
+              />
+            ) : <>
             <div className="space-y-2">
               <div className="text-xs font-bold text-text">Campaign tasks</div>
               {workspace.tasks.length === 0 && <EmptyState title="No workspace tasks" description="No tasks were returned for this workspace." icon="ti-list-check" compact />}
@@ -723,6 +739,7 @@ export function CampaignsPage() {
                 {isSaving ? <BusyLabel>Saving...</BusyLabel> : 'Save workspace item'}
               </button>
             </fieldset>
+            </>}
           </div>
         )}
       </Modal>
@@ -730,9 +747,9 @@ export function CampaignsPage() {
   )
 }
 
-function MetricCard({ label, value, sub }: { label: string; value: ReactNode; sub: string }) {
+function MetricCard({ label, value, sub, className = '' }: { label: string; value: ReactNode; sub: string; className?: string }) {
   return (
-    <div className="bg-surface border border-border rounded-2xl p-4 shadow-xs">
+    <div className={`bg-surface border border-border rounded-2xl p-4 shadow-xs ${className}`}>
       <div className="text-xs text-text-3 font-medium mb-1">{label}</div>
       <div className="text-2xl font-extrabold text-text tracking-tight">{value}</div>
       <div className="text-xs text-text-3 font-medium mt-1">{sub}</div>

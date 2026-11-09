@@ -59,6 +59,77 @@ export interface BackendCampaignCreate {
   target_leads?: number
 }
 
+export interface BackendCampaignPage {
+  id?: number
+  campaign_id?: number
+  campaign_name?: string
+  slug: string
+  eyebrow: string
+  headline: string
+  subheadline: string
+  description: string
+  location: string
+  plot_size_sqm: number
+  standard_price: number | string
+  promotion_price: number | string
+  promotion_limit: number
+  bonus_blocks: number
+  bonus_text: string
+  hero_image_url: string
+  social_title: string
+  social_description: string
+  social_image_url: string
+  contact_phone: string
+  contact_whatsapp: string
+  proximity: string[]
+  features: string[]
+  lead_form_id?: number | null
+  lead_form_name?: string | null
+  lead_form_status?: string | null
+  claims_verified: boolean
+  published: boolean
+  updated_at?: string
+}
+
+export interface BackendLeadCaptureQuestion {
+  id?: number
+  key: string
+  label: string
+  field_type: string
+  required: boolean
+  options: Array<string | { value: string; label: string }>
+  help_text?: string
+  placeholder?: string
+  sort_order: number
+  is_active: boolean
+}
+
+export interface BackendLeadCaptureForm {
+  id: number
+  campaign_id: number
+  campaign_name: string
+  name: string
+  public_key: string
+  source: string
+  status: 'draft' | 'active' | 'paused' | 'archived' | string
+  questions: BackendLeadCaptureQuestion[]
+}
+
+export interface BackendLeadCaptureSubmission {
+  id: number
+  form_id: number
+  form_name: string
+  lead_id: number
+  full_name: string
+  phone: string
+  email: string
+  location: string
+  status: string
+  answers: Record<string, unknown>
+  possible_duplicate_of?: number | null
+  submitted_at: string
+}
+
 export interface BackendCampaignRequestCreate {
   title: string
   problem: string
@@ -1053,6 +1124,65 @@ export const marketingService = {
 
   getCampaignWorkspace: async (campaignId: string | number) => {
     return apiRequest(`/api/v1/marketing-campaigns/${campaignId}/workspace`)
+  },
+
+  getCampaignPublicPage: async (campaignId: string | number) => {
+    return apiRequest<BackendCampaignPage>(`/api/v1/marketing-campaigns/${campaignId}/public-page`)
+  },
+
+  createCampaignPublicPage: async (campaignId: string | number, payload: BackendCampaignPage) => {
+    return apiRequest<BackendCampaignPage>(`/api/v1/marketing-campaigns/${campaignId}/public-page`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateCampaignPublicPage: async (campaignId: string | number, payload: Partial<BackendCampaignPage>) => {
+    return apiRequest<BackendCampaignPage>(`/api/v1/marketing-campaigns/${campaignId}/public-page`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  deleteCampaignPublicPage: async (campaignId: string | number) => {
+    return apiRequest(`/api/v1/marketing-campaigns/${campaignId}/public-page`, {
+      method: 'DELETE',
+    })
+  },
+
+  getLeadCaptureForms: async (campaignId: string | number) => {
+    return apiRequest<BackendLeadCaptureForm[]>(`/api/v1/marketing-campaigns/${campaignId}/lead-forms`)
+  },
+
+  createLeadCaptureForm: async (
+    campaignId: string | number,
+    payload: { name: string; source?: string; status?: string; questions: BackendLeadCaptureQuestion[] },
+  ) => {
+    return apiRequest<BackendLeadCaptureForm>(`/api/v1/marketing-campaigns/${campaignId}/lead-forms`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  updateLeadCaptureForm: async (
+    campaignId: string | number,
+    formId: string | number,
+    payload: { name?: string; status?: string; questions?: BackendLeadCaptureQuestion[] },
+  ) => {
+    return apiRequest<BackendLeadCaptureForm>(`/api/v1/marketing-campaigns/${campaignId}/lead-forms/${formId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    })
+  },
+
+  getLeadCaptureSubmissions: async (
+    campaignId: string | number,
+    formId: string | number,
+    params?: { limit?: number; offset?: number; status?: string; search?: string; possible_duplicate?: boolean },
+  ) => {
+    return apiRequest<{ count: number; items: BackendLeadCaptureSubmission[] }>(
+      `/api/v1/marketing-campaigns/${campaignId}/lead-forms/${formId}/submissions${toQuery(params)}`,
+    )
   },
 
   createCampaignTask: async (campaignId: string | number, payload: BackendCampaignTaskCreate) => {

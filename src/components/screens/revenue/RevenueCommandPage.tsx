@@ -234,9 +234,9 @@ export function RevenueCommandPage() {
         setApiError(parseApiError(errors[0]))
       }
 
-      if (summaryRes.data) setExecutionSummary(summaryRes.data)
-      if (pipelineRes.data) setPipelineReport(pipelineRes.data)
-      if (funnelRes.data) setFunnelSummary(funnelRes.data)
+      if (isRecord(summaryRes.data)) setExecutionSummary(summaryRes.data)
+      if (isRecord(pipelineRes.data)) setPipelineReport(pipelineRes.data)
+      if (isRecord(funnelRes.data)) setFunnelSummary(funnelRes.data)
       if (speedRes.data) setSpeedQueue(asArray(speedRes.data))
       if (scorecardRes.data) setScorecard(asArray(scorecardRes.data))
       setApiTasks([])

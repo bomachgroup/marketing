@@ -102,13 +102,6 @@ export function WorkdeskPage() {
   const { user, userRole, employeeDetails } = useAuth();
   const { showToast } = useToast();
   const navigate = useNavigate();
-  const searchParams = new URLSearchParams(
-    typeof window !== "undefined" ? window.location.search : "",
-  );
-  const isEmbedded =
-    searchParams.get("embed") === "true" ||
-    searchParams.get("embedded") === "true";
-
   const [summaryData, setSummaryData] =
     useState<DashboardSummaryResponse | null>(null);
   const [perfCard, setPerfCard] = useState<PerformanceCardResponse | null>(
@@ -143,19 +136,19 @@ export function WorkdeskPage() {
 
   const roleLabel = userFullName;
 
+  const profileRole =
+    typeof user?.role === "string" ? user.role : user?.role?.name;
+  const isLeadershipUser =
+    /tochukwu|anigbo|ceo|founder|admin|super/i.test(userFullName) ||
+    user?.is_superuser === true;
   const roleTitle =
     summaryData?.job_title ||
     userRole?.name ||
     employeeDetails?.role_name ||
     employeeDetails?.position ||
     employeeDetails?.designation ||
-    user?.role ||
-    (userFullName
-      .toLowerCase()
-      .match(/tochukwu|anigbo|ceo|founder|admin|super/) ||
-    (user as any)?.is_superuser
-      ? "CEO & Founder"
-      : "Staff");
+    profileRole ||
+    (isLeadershipUser ? "CEO & Founder" : "Staff");
 
   // Fetch real Work Desk data strictly from backend endpoints
   const loadWorkdeskData = useCallback(async () => {
@@ -416,8 +409,6 @@ export function WorkdeskPage() {
         title="My work desk"
         period={period}
         onPeriodChange={setPeriod}
-        hidePeriod={isEmbedded}
-        hideActions={isEmbedded}
       />
 
       <div className="min-w-0 flex-1 space-y-5 overflow-x-hidden overflow-y-auto p-5">

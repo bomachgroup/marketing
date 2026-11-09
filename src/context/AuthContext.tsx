@@ -3,32 +3,14 @@ import {
   createContext,
   useCallback,
   useContext,
-  useState,
   useEffect,
+  useState,
   type ReactNode,
 } from "react";
-import {
-  authService,
-  type UserProfile,
-  type UserRoleResponse,
-  type EmployeeDetailsResponse,
-} from "../services/api/authService";
-import {
-  clearAccessToken,
-  clearLegacyStoredTokens,
-  clearRefreshToken,
-  getAccessToken,
-  getRefreshToken,
-  setAccessToken,
-  setRefreshToken,
-} from "../services/api/authTokenStore";
-import { extractSearchParams, setApiBaseUrl } from "../services/api/apiClient";
-import {
-  isTrustedAuthMessage,
-  parentOriginFromReferrer,
-  sendAuthReady,
-} from "../services/embedding/authMessage";
+import { authService, type EmployeeDetailsResponse, type UserProfile, type UserRoleResponse } from "../services/api/authService";
+import { clearLegacyStoredAuth, SESSION_ESTABLISHED_KEY } from "../services/api/apiClient";
 import { firstAccessibleScreen } from "../navigation";
+import { clearWorkspaceMemory } from "../shared/auth/workspace-memory";
 
 interface AuthContextValue {
   user: UserProfile | null;
@@ -39,21 +21,9 @@ interface AuthContextValue {
   isLoggedIn: boolean;
   isLoading: boolean;
   authError: string | null;
-  twoFactorToken: string | null;
   hasPermission: (resource: string, action?: string) => boolean;
   getFirstAccessibleScreen: () => string;
-  login: (
-    email: string,
-    pass: string,
-  ) => Promise<{
-    success: boolean;
-    requires2FA?: boolean;
-    error?: string;
-    redirectTo?: string;
-  }>;
-  verify2FA: (
-    code: string,
-  ) => Promise<{ success: boolean; error?: string; redirectTo?: string }>;
+  retrySession: () => void;
   logout: () => void;
 }
 
@@ -63,9 +33,9 @@ const SCREEN_TO_RESOURCE_MAP: Record<string, string[]> = {
   pipeline: ["pipeline", "leads", "deals", "crm"],
   "leads-detail": ["leads", "pipeline"],
   "lead-journal": ["leads", "followups", "inquiries"],
-  calendar: ["calendar", "content_calendar", "content_calendar_briefs"],
+  calendar: ["calendar", "content", "content_calendar", "content_calendar_briefs"],
   campaigns: ["marketing_campaigns", "campaigns", "campaign"],
-  analytics: ["analytics", "marketing_analytics"],
+  analytics: ["analytics", "marketing_analytics", "marketing_dashboard"],
   okrs: ["revenue_execution", "employee_targets", "role_kpis", "kpis", "okrs", "targets"],
   whatsapp: ["whatsapp", "messages", "inquiries"],
   partners: ["partners", "partner_agreements"],
@@ -76,12 +46,7 @@ const SCREEN_TO_RESOURCE_MAP: Record<string, string[]> = {
   media: ["media", "media_library", "content_media_library"],
   "revenue-command": ["revenue_execution", "revenue_command"],
   "daily-execution": ["revenue_execution", "daily_execution", "revenue_execution_daily_execution"],
-  "lead-control": [
-    "revenue_execution",
-    "lead_controltower",
-    "lead_control",
-    "revenue_execution_lead_control",
-  ],
+  "lead-control": ["revenue_execution", "lead_controltower", "lead_control", "revenue_execution_lead_control"],
   "funnel-audit": ["funnel_audit", "revenue_execution_funnel_audit"],
   playbooks: ["revenue_execution", "role_success_playbook", "role_sops", "playbooks"],
   "content-studio": ["content", "content_studio"],
@@ -99,7 +64,7 @@ const SCREEN_TO_RESOURCE_MAP: Record<string, string[]> = {
   "role-governance": ["roles", "permissions", "role_governance"],
   approvals: ["approval_requests", "approval_flows", "approvals"],
   "audit-log": ["audit_logs", "logs"],
-  "marketing-meetings": ["marketing_meetings", "marketing-meetings"],
+  "marketing-meetings": ["meetings", "marketing_meetings", "marketing-meetings"],
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -108,138 +73,36 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isUserProfile(value: unknown): value is UserProfile {
-  return (
-    isRecord(value) &&
-    (typeof value.id === "number" || typeof value.id === "string") &&
-    typeof value.email === "string"
+function isPermissionMap(value: unknown): value is Record<string, string[]> {
+  return isRecord(value) && Object.values(value).every(
+    (actions) => Array.isArray(actions) && actions.every((action) => typeof action === "string"),
   );
+}
+
+function roleNameOf(user: UserProfile): string {
+  return typeof user.role === "string" ? user.role : user.role?.name || "Staff";
+}
+
+function mapRoleNameToKey(roleName: string, user: UserProfile): string {
+  const value = `${roleName} ${user.email} ${user.username} ${user.first_name || ""} ${user.last_name || ""}`.toLowerCase();
+  if (value.includes("ceo") || value.includes("founder") || value.includes("chief executive") || value.includes("admin")) return "ceo";
+  if (value.includes("coordinator")) return "coord";
+  if (value.includes("business development") || value.includes("business developer") || value.includes("bizdev")) return "bizdev";
+  if (value.includes("software") || value.includes("analyst") || value.includes("analytics") || value.includes("data")) return "analyst";
+  if (value.includes("manager") || value.includes("head") || value.includes("lead")) return "mgr";
+  if (value.includes("digital") || value.includes("marketer")) return "digital";
+  if (value.includes("sales") || value.includes("rep")) return "sales";
+  if (value.includes("content") || value.includes("creator") || value.includes("writer")) return "content";
+  if (value.includes("design") || value.includes("graphic")) return "graphic";
+  if (value.includes("care") || value.includes("support")) return "care";
+  if (value.includes("partner") || value.includes("realtor")) return "partner";
+  return "mgr";
 }
 
 export function permissionsFromRoleResponse(
   role: UserRoleResponse | null | undefined,
 ): Record<string, string[]> {
-  if (!isRecord(role?.permissions)) return {};
-
-  return Object.fromEntries(
-    Object.entries(role.permissions).filter(
-      (entry): entry is [string, string[]] =>
-        Array.isArray(entry[1]) && entry[1].every((action) => typeof action === "string"),
-    ),
-  );
-}
-
-function firstString(...values: unknown[]): string {
-  for (const value of values) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return "";
-}
-
-function roleBranchName(role: UserRoleResponse): string {
-  const firstBranch = role.branches?.find(isRecord);
-  return firstString(
-    firstBranch?.name,
-    firstBranch?.branch_name,
-    firstBranch?.title,
-  );
-}
-
-function employeeDetailsFromRole(
-  userProfile: UserProfile,
-  role: UserRoleResponse,
-): EmployeeDetailsResponse {
-  const fullName = firstString(
-    [userProfile.first_name, userProfile.last_name].filter(Boolean).join(" "),
-    userProfile.username,
-    userProfile.email,
-  );
-
-  return {
-    id: userProfile.id,
-    employee_id: String(userProfile.id),
-    email: userProfile.email,
-    full_name: fullName,
-    phone: userProfile.phone_number || "",
-    department_id: "",
-    position: role.name,
-    role_id: role.id,
-    role_name: role.name,
-    designation: role.name,
-    department_name: "",
-    branch_name: roleBranchName(role),
-    is_active: true,
-  };
-}
-
-function mapRoleNameToKey(
-  roleName?: string,
-  position?: string,
-  email?: string,
-  userProfile?: UserProfile | null,
-): string {
-  const str =
-    `${roleName || ""} ${position || ""} ${email || ""} ${userProfile?.role || ""} ${userProfile?.username || ""} ${userProfile?.first_name || ""} ${userProfile?.last_name || ""}`.toLowerCase();
-
-  if (
-    str.includes("ceo") ||
-    str.includes("founder") ||
-    str.includes("chief executive") ||
-    str.includes("managing director") ||
-    str.includes("admin") ||
-    str.includes("super") ||
-    str.includes("executive") ||
-    str.includes("tochukwu") ||
-    str.includes("anigbo") ||
-    userProfile?.is_superuser === true
-  ) {
-    return "ceo";
-  }
-  if (str.includes("coordinator")) {
-    return "coord";
-  }
-  if (
-    str.includes("business development") ||
-    str.includes("business developer") ||
-    str.includes("bizdev")
-  ) {
-    return "bizdev";
-  }
-  if (
-    str.includes("software") ||
-    str.includes("analyst") ||
-    str.includes("analytics") ||
-    str.includes("data")
-  ) {
-    return "analyst";
-  }
-  if (str.includes("manager") || str.includes("head") || str.includes("lead")) {
-    return "mgr";
-  }
-  if (str.includes("digital") || str.includes("marketer")) {
-    return "digital";
-  }
-  if (str.includes("sales") || str.includes("rep")) {
-    return "sales";
-  }
-  if (
-    str.includes("content") ||
-    str.includes("creator") ||
-    str.includes("writer")
-  ) {
-    return "content";
-  }
-  if (str.includes("design") || str.includes("graphic")) {
-    return "graphic";
-  }
-  if (str.includes("care") || str.includes("support")) {
-    return "care";
-  }
-  if (str.includes("partner") || str.includes("realtor")) {
-    return "partner";
-  }
-
-  return "mgr";
+  return isPermissionMap(role?.permissions) ? role.permissions : {};
 }
 
 export function canAccessWithPermissions(
@@ -248,642 +111,168 @@ export function canAccessWithPermissions(
   _roleKey: string,
   permissionMap: Record<string, string[]>,
 ): boolean {
-  if (resource === "integrations") return false;
-
   const normalizedResource = resource.toLowerCase().replace(/^\//, "");
-  if (
-    [
-      "funnel-audit",
-      "compliance",
-      "retention",
-      "whatsapp",
-      "design",
-      "role-governance",
-      "audit-log",
-    ].includes(normalizedResource)
-  ) {
-    return false;
-  }
+  if (["integrations", "funnel-audit", "compliance", "retention", "whatsapp", "design", "role-governance", "audit-log"].includes(normalizedResource)) return false;
 
-  const hasExplicitGlobalGrant = ["*", "all"].some((resourceKey) =>
-    permissionMap[resourceKey]?.some((grantedAction) =>
-      ["*", "all"].includes(grantedAction.toLowerCase()),
-    ),
+  const hasWildcard = ["*", "all"].some((key) =>
+    permissionMap[key]?.some((granted) => ["*", "all"].includes(granted.toLowerCase())),
   );
-  if (hasExplicitGlobalGrant) {
-    return true;
-  }
+  if (hasWildcard) return true;
 
-  const cleanRes = resource.toLowerCase().replace(/^\//, "").replace(/-/g, "_");
-  const candidates = Array.from(
-    new Set([
-      cleanRes,
-      resource,
-      ...(SCREEN_TO_RESOURCE_MAP[cleanRes] || []),
-      ...(SCREEN_TO_RESOURCE_MAP[resource] || []),
-    ]),
-  );
-
-  const hasBackendPermissions = Object.keys(permissionMap).length > 0;
-
-  if (hasBackendPermissions) {
-    for (const key of candidates) {
-      if (Object.prototype.hasOwnProperty.call(permissionMap, key)) {
-        const val = permissionMap[key];
-        if (Array.isArray(val)) {
-          if (val.length === 0) return false;
-          const act = action.toLowerCase();
-          if (act === "view") {
-            return (
-              val.includes("view") ||
-              val.includes("read") ||
-              val.includes("get") ||
-              val.includes("list") ||
-              val.includes("access") ||
-              val.includes("*") ||
-              val.includes("all")
-            );
-          }
-          return val.includes(act) || val.includes("*") || val.includes("all");
-        }
-      }
+  const clean = normalizedResource.replace(/-/g, "_");
+  const candidates = new Set([clean, normalizedResource, ...(SCREEN_TO_RESOURCE_MAP[clean] || []), ...(SCREEN_TO_RESOURCE_MAP[normalizedResource] || [])].map((key) => key.toLowerCase()));
+  const normalizedCandidates = new Set([...candidates].map((key) => key.replace(/_/g, "")));
+  for (const [key, grants] of Object.entries(permissionMap)) {
+    if (!candidates.has(key.toLowerCase()) && !normalizedCandidates.has(key.toLowerCase().replace(/_/g, ""))) continue;
+    const normalizedGrants = grants.map((grant) => grant.toLowerCase());
+    if (normalizedGrants.includes("*") || normalizedGrants.includes("all")) return true;
+    if (action.toLowerCase() === "view") {
+      if (["view", "read", "get", "list", "access"].some((grant) => normalizedGrants.includes(grant))) return true;
+      continue;
     }
-
-    const cleanCandSet = new Set(candidates.map((c) => c.replace(/_/g, "")));
-    for (const pKey of Object.keys(permissionMap)) {
-      const cleanPKey = pKey.toLowerCase().replace(/_/g, "");
-      if (cleanCandSet.has(cleanPKey)) {
-        const val = permissionMap[pKey];
-        if (Array.isArray(val)) {
-          if (val.length === 0) return false;
-          const act = action.toLowerCase();
-          if (act === "view") {
-            return (
-              val.includes("view") ||
-              val.includes("read") ||
-              val.includes("get") ||
-              val.includes("list") ||
-              val.includes("access") ||
-              val.includes("*") ||
-              val.includes("all")
-            );
-          }
-          return val.includes(act) || val.includes("*") || val.includes("all");
-        }
-      }
-    }
-
-    return false;
+    if (normalizedGrants.includes(action.toLowerCase())) return true;
   }
-
-  // Permission data is authoritative for authenticated non-admin users. If
-  // the backend did not return a permission map, fail closed instead of
-  // exposing the role's default navigation and letting the page fail later.
   return false;
+}
+
+function userRoleFromProfile(user: UserProfile, permissions: Record<string, string[]>): UserRoleResponse {
+  const role = typeof user.role === "object" && user.role ? user.role : null;
+  return {
+    id: role?.id ?? 0,
+    name: roleNameOf(user),
+    permissions,
+    created_at: "",
+    updated_at: "",
+  };
+}
+
+function employeeFromProfile(user: UserProfile, roleName: string): EmployeeDetailsResponse {
+  return {
+    id: user.id,
+    employee_id: String(user.id),
+    email: user.email,
+    full_name: [user.first_name, user.last_name].filter(Boolean).join(" ").trim() || user.username || user.email,
+    phone: user.phone_number || "",
+    department_id: "",
+    position: roleName,
+    role_name: roleName,
+    designation: roleName,
+    department_name: "",
+    branch_name: "",
+    is_active: true,
+  };
+}
+
+function clearLegacyQueryParameters(): void {
+  const blocked = ["token", "access_token", "refreshToken", "refresh_token", "apiBaseUrl", "backendUrl", "apiUrl", "embed", "embedded"];
+  const url = new URL(window.location.href);
+  let changed = false;
+  for (const key of blocked) {
+    if (url.searchParams.has(key)) {
+      url.searchParams.delete(key);
+      changed = true;
+    }
+  }
+  if (changed) window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [userRole, setUserRole] = useState<UserRoleResponse | null>(null);
-  const [employeeDetails, setEmployeeDetails] =
-    useState<EmployeeDetailsResponse | null>(null);
+  const [employeeDetails, setEmployeeDetails] = useState<EmployeeDetailsResponse | null>(null);
   const [permissions, setPermissions] = useState<Record<string, string[]>>({});
-  const [currentRole, setCurrentRole] = useState<string>("ceo");
-  const [isLoggedIn, setIsLoggedIn] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [currentRole, setCurrentRole] = useState("staff");
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [twoFactorToken, setTwoFactorToken] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Fetch full user role & permissions from GET /api/v1/roles/employees/{id}
-  const fetchUserRoleAndPermissions = async (userProfile: UserProfile) => {
-    try {
-      let roleName = userProfile.role || "";
-      let positionStr = "";
-      let extracted: Record<string, string[]> = {};
-      let employee: EmployeeDetailsResponse | undefined;
+  const restoreSession = useCallback(async () => {
+    clearLegacyStoredAuth();
+    clearLegacyQueryParameters();
 
-      const roleRes = await authService
-        .getUserRole(userProfile.id)
-        .catch(() => null);
-      if (roleRes?.data) {
-        setUserRole(roleRes.data);
-        employee = employeeDetailsFromRole(userProfile, roleRes.data);
-        setEmployeeDetails(employee);
-        extracted = permissionsFromRoleResponse(roleRes.data);
-        if (roleRes.data.name) roleName = roleRes.data.name;
-      } else {
-        const fallbackRoleName = roleName || "Staff";
-        const fallbackPermissions: Record<string, string[]> = {};
-
-        const fallback: UserRoleResponse = {
-          id: 1,
-          name: fallbackRoleName,
-          permissions: fallbackPermissions,
-          created_at: "",
-          updated_at: "",
-        };
-        setUserRole(fallback);
-        employee = employeeDetailsFromRole(userProfile, fallback);
-        setEmployeeDetails(employee);
-        extracted = fallbackPermissions;
-        roleName = fallbackRoleName;
+    const result = await authService.getCurrentUser();
+    if (result.data && isRecord(result.data) && (typeof result.data.id === "number" || typeof result.data.id === "string") && typeof result.data.email === "string") {
+      const profile = result.data as UserProfile;
+      const granted = isPermissionMap(profile.permissions) ? profile.permissions : {};
+      const roleName = roleNameOf(profile);
+      const roleKey = mapRoleNameToKey(roleName, profile);
+      setUser(profile);
+      setPermissions(granted);
+      setUserRole(userRoleFromProfile(profile, granted));
+      setEmployeeDetails(employeeFromProfile(profile, roleName));
+      setCurrentRole(roleKey);
+      setIsLoggedIn(true);
+      try {
+        window.sessionStorage.setItem(SESSION_ESTABLISHED_KEY, "1");
+      } catch {
+        // Session storage is optional; the cookie remains authoritative.
       }
-
-      positionStr = employee?.position || employee?.designation || "";
-      setPermissions(extracted);
-
-      const activeKey = mapRoleNameToKey(
-        roleName || positionStr,
-        positionStr,
-        userProfile.email,
-        userProfile,
-      );
-      setCurrentRole(activeKey);
-      const redirectTo = firstAccessibleScreen(
-        activeKey,
-        extracted,
-        (resource, action = "view") =>
-          canAccessWithPermissions(resource, action, activeKey, extracted),
-      );
-      return { activeKey, permissions: extracted, redirectTo };
-    } catch {
-      const activeKey = mapRoleNameToKey(
-        userProfile.role || "",
-        "",
-        userProfile.email,
-        userProfile,
-      );
-      const emptyPermissions: Record<string, string[]> = {};
-      setCurrentRole(activeKey);
-      setPermissions(emptyPermissions);
-      setEmployeeDetails(null);
-      return {
-        activeKey,
-        permissions: emptyPermissions,
-        redirectTo: firstAccessibleScreen(
-          activeKey,
-          emptyPermissions,
-          (resource, action = "view") =>
-            canAccessWithPermissions(
-              resource,
-              action,
-              activeKey,
-              emptyPermissions,
-            ),
-        ),
-      };
-    }
-  };
-
-  function userFromToken(
-    token: string,
-    searchParams?: URLSearchParams,
-  ): UserProfile {
-    let userId = 1;
-    let email = "";
-    let username = "";
-    let firstName = "";
-    let lastName = "";
-    let role = "";
-
-    if (searchParams) {
-      const nameParam =
-        searchParams.get("fullName") ||
-        searchParams.get("name") ||
-        searchParams.get("userName") ||
-        "";
-      if (nameParam) {
-        const parts = nameParam.trim().split(/\s+/);
-        firstName = parts[0] || "";
-        lastName = parts.slice(1).join(" ") || "";
-        username = nameParam.toLowerCase().replace(/\s+/g, ".");
-      }
-      const emailParam =
-        searchParams.get("email") || searchParams.get("userEmail") || "";
-      if (emailParam) email = emailParam;
-      const roleParam =
-        searchParams.get("role") || searchParams.get("userRole") || "";
-      if (roleParam) role = roleParam;
-    }
-
-    try {
-      const parts = token.split(".");
-      if (parts.length >= 2) {
-        const base64Url = parts[1];
-        const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
-        const jsonPayload = decodeURIComponent(
-          atob(base64)
-            .split("")
-            .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
-            .join(""),
-        );
-        const payload = JSON.parse(jsonPayload);
-        if (payload && typeof payload === "object") {
-          if (payload.user_id || payload.id || payload.sub) {
-            userId = Number(payload.user_id || payload.id || payload.sub);
-          }
-          if (!email && (payload.email || payload.user_email)) {
-            email = String(payload.email || payload.user_email);
-          }
-          if (!username && payload.username) {
-            username = String(payload.username);
-          }
-          if (!firstName && (payload.first_name || payload.firstName)) {
-            firstName = String(payload.first_name || payload.firstName);
-          }
-          if (!lastName && (payload.last_name || payload.lastName)) {
-            lastName = String(payload.last_name || payload.lastName);
-          }
-          if (
-            !role &&
-            (payload.role || payload.role_name || payload.designation)
-          ) {
-            role = String(
-              payload.role || payload.role_name || payload.designation,
-            );
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    return {
-      id: Number.isFinite(userId) && userId > 0 ? userId : 1,
-      email: email || "user@bomach.com",
-      username: username || (firstName ? firstName.toLowerCase() : "user"),
-      first_name: firstName || undefined,
-      last_name: lastName || undefined,
-      is_verified: true,
-      created_at: new Date().toISOString(),
-      role: role || undefined,
-    };
-  }
-
-  // Restore authenticated user session on app mount
-  useEffect(() => {
-    let isCancelled = false;
-    const searchParams = extractSearchParams();
-    const isEmbed =
-      searchParams.get("embed") === "true" ||
-      searchParams.get("embedded") === "true";
-    const parentOrigin = parentOriginFromReferrer(document.referrer);
-    let readyAttempts = 0;
-    let readyTimer: number | undefined;
-
-    if (isEmbed && window.parent !== window) {
-      const announceReady = () => {
-        if (readyAttempts >= 3) return;
-        readyAttempts += 1;
-        sendAuthReady(window.parent, parentOrigin);
-      };
-      announceReady();
-      readyTimer = window.setInterval(announceReady, 1500);
-    }
-
-    async function restoreSession() {
-      clearLegacyStoredTokens();
-
-      const tokenFromUrl = searchParams.get("token") || searchParams.get("access_token");
-      const refreshTokenFromUrl = searchParams.get("refreshToken") || searchParams.get("refresh_token");
-      const backendUrlFromUrl =
-        searchParams.get("apiBaseUrl") ||
-        searchParams.get("backendUrl") ||
-        searchParams.get("apiUrl");
-      if (backendUrlFromUrl) {
-        setApiBaseUrl(backendUrlFromUrl);
-      }
-      if (tokenFromUrl) {
-        setAccessToken(tokenFromUrl);
-        if (refreshTokenFromUrl) setRefreshToken(refreshTokenFromUrl);
-      }
-
-      const storedToken = tokenFromUrl || getAccessToken();
-      const storedRefreshToken = refreshTokenFromUrl || getRefreshToken();
-      if (storedToken) {
-        let tokenProfile: UserProfile | null = null;
-        try {
-          setAccessToken(storedToken);
-          if (storedRefreshToken) setRefreshToken(storedRefreshToken);
-          tokenProfile = userFromToken(storedToken);
-          setUser(tokenProfile);
-          setIsLoggedIn(true);
-
-          const res = await Promise.race([
-            authService.getCurrentUser(),
-            new Promise<{ data?: UserProfile }>((_, reject) =>
-              setTimeout(() => reject(new Error("Auth timeout")), 4000),
-            ),
-          ]).catch(() => null);
-
-          if (isCancelled) return;
-
-          const effectiveUser = res?.data || tokenProfile;
-          if (!effectiveUser?.id && !effectiveUser?.email) throw new Error("Secure authentication could not be completed.");
-
-          setUser(effectiveUser);
-          setIsLoggedIn(true);
-          await fetchUserRoleAndPermissions(effectiveUser);
-          setAuthError(null);
-          setIsLoading(false);
-          return;
-        } catch (err) {
-          console.warn("Failed to authenticate with stored token:", err);
-          if (tokenProfile && (tokenProfile.id || tokenProfile.email)) {
-            setUser(tokenProfile);
-            setIsLoggedIn(true);
-            await fetchUserRoleAndPermissions(tokenProfile);
-            setAuthError(null);
-            setIsLoading(false);
-            return;
-          }
-          clearAccessToken();
-          clearRefreshToken();
-          setAuthError("Secure authentication could not be completed. Please reload the embedded app.");
-        }
-      }
-
-      // Embedded sessions wait for the parent handshake. Standalone sessions
-      // may still restore their normal cookie/refresh-token session.
-      if (!isEmbed) {
-        try {
-          const refreshRes = await authService.refreshSession();
-          if (refreshRes.data?.access_token) {
-            setAccessToken(refreshRes.data.access_token);
-
-            const res = await authService.getCurrentUser();
-            if (res.data?.id) {
-              if (isCancelled) return;
-              setUser(res.data);
-              setIsLoggedIn(true);
-              await fetchUserRoleAndPermissions(res.data);
-              setAuthError(null);
-              setIsLoading(false);
-              return;
-            }
-          }
-        } catch {
-          /* Invalid, expired, or unavailable refresh cookie. */
-        }
-      }
-
-      if (isCancelled) return;
-
-      if (isEmbed && !storedToken) {
-        setAuthError("Waiting for secure authentication from BOMACH OS.");
-      }
-      if (!isEmbed) {
-        clearAccessToken();
-        clearRefreshToken();
-      }
-      setUser(null);
-      setUserRole(null);
-      setEmployeeDetails(null);
-      setPermissions({});
-      setIsLoggedIn(false);
       setIsLoading(false);
+      return;
     }
 
-    void restoreSession();
-
-    // Listen for postMessage from parent container (e.g. Bomach OS webview)
-    const handleMessage = async (e: MessageEvent) => {
-      if (!isTrustedAuthMessage(e, window.parent, parentOrigin || "")) return;
-
-        const incomingToken = e.data.token;
-        const incomingRefreshToken = e.data.refreshToken;
-        const incomingApiBase =
-          e.data.apiBaseUrl || e.data.backendUrl;
-        if (incomingApiBase) {
-          setApiBaseUrl(incomingApiBase);
-        }
-        setAccessToken(incomingToken);
-          if (incomingRefreshToken) {
-            setRefreshToken(incomingRefreshToken);
-          }
-
-          setAuthError(null);
-          const tokenProfile = userFromToken(incomingToken);
-          const effectiveProfile = tokenProfile;
-          setUser(effectiveProfile);
-          setIsLoggedIn(true);
-
-          try {
-            const res = await authService.getCurrentUser();
-            const responseData: unknown = res.data;
-            const userObj = isRecord(responseData)
-              ? isUserProfile(responseData)
-                ? responseData
-                : isUserProfile(responseData.user)
-                  ? responseData.user
-                  : null
-              : null;
-            const effectiveUser =
-              userObj && (userObj.id || userObj.email)
-                ? { ...effectiveProfile, ...userObj }
-                : null;
-
-            if (effectiveUser) {
-              setUser(effectiveUser);
-              setIsLoggedIn(true);
-              await fetchUserRoleAndPermissions(effectiveUser);
-              setAuthError(null);
-            } else {
-              setUser(effectiveProfile);
-              setIsLoggedIn(true);
-              await fetchUserRoleAndPermissions(effectiveProfile);
-              setAuthError(null);
-            }
-          } catch (err) {
-            console.warn("Failed to authenticate with postMessage token:", err);
-            if (effectiveProfile && (effectiveProfile.id || effectiveProfile.email)) {
-              setUser(effectiveProfile);
-              setIsLoggedIn(true);
-              await fetchUserRoleAndPermissions(effectiveProfile);
-              setAuthError(null);
-            } else {
-              clearAccessToken();
-              clearRefreshToken();
-              setUser(null);
-              setIsLoggedIn(false);
-              setAuthError("Secure authentication failed. Reload the embedded app to retry.");
-            }
-          } finally {
-            setIsLoading(false);
-          }
-    };
-
-    window.addEventListener("message", handleMessage);
-    return () => {
-      isCancelled = true;
-      if (readyTimer !== undefined) window.clearInterval(readyTimer);
-      window.removeEventListener("message", handleMessage);
-    };
+    setUser(null);
+    setUserRole(null);
+    setEmployeeDetails(null);
+    setPermissions({});
+    setCurrentRole("staff");
+    setIsLoggedIn(false);
+    if (result.status !== 401 && result.status !== 403) {
+      setAuthError(result.error || "Could not verify your Bomach session. Check your connection and retry.");
+    }
+    setIsLoading(false);
   }, []);
 
-  const login = async (email: string, pass: string) => {
-    setIsLoading(true);
-    setAuthError(null);
-    try {
-      const res = await authService.login({ email, password: pass });
-
-      if (res.data) {
-        if (res.data.requires_2fa) {
-          const token = res.data.session_token || null;
-          if (!token) {
-            setIsLoading(false);
-            return {
-              success: false,
-              error: "2FA session token was not returned by the server",
-            };
-          }
-          setTwoFactorToken(token);
-          setIsLoading(false);
-          return { success: false, requires2FA: true };
-        }
-
-        if (res.data.access_token) {
-          setAccessToken(res.data.access_token);
-          setRefreshToken(res.data.refresh_token);
-
-          // Fetch user profile from GET /api/v1/auth/me
-          const meRes = await authService.getCurrentUser();
-          const userIdNum: number =
-            typeof res.data.user_id === "number" ? res.data.user_id : 1;
-          const profile: UserProfile = meRes.data || {
-            id: userIdNum,
-            email,
-            username: email.split("@")[0],
-            first_name: "Authenticated",
-            last_name: "User",
-            is_verified: true,
-            created_at: new Date().toISOString(),
-          };
-
-          setUser(profile);
-          setIsLoggedIn(true);
-
-          const roleLoad = await fetchUserRoleAndPermissions(profile);
-          setIsLoading(false);
-          return { success: true, redirectTo: roleLoad.redirectTo };
-        }
-      }
-
-      setIsLoading(false);
-      return {
-        success: false,
-        error: res.error || "Invalid login credentials",
-      };
-    } catch (err: unknown) {
-      setIsLoading(false);
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : "Login request failed",
-      };
-    }
-  };
-
-  const verify2FA = async (code: string) => {
-    if (!twoFactorToken)
-      return { success: false, error: "No 2FA session token" };
-    setIsLoading(true);
-    setAuthError(null);
-    try {
-      const res = await authService.verify2FA({
-        session_token: twoFactorToken,
-        code,
-      });
-      if (res.data && res.data.access_token) {
-        setAccessToken(res.data.access_token);
-        setRefreshToken(res.data.refresh_token);
-        const meRes = await authService.getCurrentUser();
-        const userIdNum: number =
-          typeof res.data.user_id === "number" ? res.data.user_id : 1;
-        const profile: UserProfile = meRes.data || {
-          id: userIdNum,
-          email: "user@bomach.com",
-          username: "user",
-          is_verified: true,
-          created_at: new Date().toISOString(),
-        };
-        setUser(profile);
-        setIsLoggedIn(true);
-        setTwoFactorToken(null);
-        const roleLoad = await fetchUserRoleAndPermissions(profile);
-        setIsLoading(false);
-        return { success: true, redirectTo: roleLoad.redirectTo };
-      }
-      setIsLoading(false);
-      return {
-        success: false,
-        error: res.error || "Invalid 2FA verification code",
-      };
-    } catch (err: unknown) {
-      setIsLoading(false);
-      return {
-        success: false,
-        error: err instanceof Error ? err.message : "Verification failed",
-      };
-    }
-  };
+  useEffect(() => {
+    let active = true;
+    queueMicrotask(() => {
+      if (active) void restoreSession();
+    });
+    return () => { active = false; };
+  }, [reloadKey, restoreSession]);
 
   const hasPermission = useCallback(
-    (resource: string, action = "view"): boolean => {
-      return canAccessWithPermissions(
-        resource,
-        action,
-        currentRole,
-        permissions,
-      );
-    },
+    (resource: string, action = "view") => canAccessWithPermissions(resource, action, currentRole, permissions),
     [currentRole, permissions],
   );
-
   const getFirstAccessibleScreen = useCallback(
     () => firstAccessibleScreen(currentRole, permissions, hasPermission),
     [currentRole, hasPermission, permissions],
   );
-
-  const logout = () => {
-    authService.logout().catch(() => {});
-    clearAccessToken();
-    clearLegacyStoredTokens();
-    clearRefreshToken();
+  const retrySession = useCallback(() => {
+    setIsLoading(true);
+    setAuthError(null);
+    setReloadKey((key) => key + 1);
+  }, []);
+  const logout = useCallback(() => {
+    void authService.logout();
+    clearLegacyStoredAuth();
+    if (user) clearWorkspaceMemory(user.id);
+    try {
+      window.sessionStorage.removeItem(SESSION_ESTABLISHED_KEY);
+    } catch {
+      // Ignore unavailable browser storage.
+    }
     setUser(null);
     setUserRole(null);
     setEmployeeDetails(null);
     setPermissions({});
     setIsLoggedIn(false);
-    setTwoFactorToken(null);
-    setAuthError(null);
-  };
+  }, [user]);
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        userRole,
-        employeeDetails,
-        permissions,
-        currentRole,
-        isLoggedIn,
-        isLoading,
-        authError,
-        twoFactorToken,
-        hasPermission,
-        getFirstAccessibleScreen,
-        login,
-        verify2FA,
-        logout,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user, userRole, employeeDetails, permissions, currentRole, isLoggedIn,
+      isLoading, authError, hasPermission, getFirstAccessibleScreen, retrySession, logout,
+    }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export function useAuth(): AuthContextValue {
-  const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error("useAuth must be used within an AuthProvider");
-  return ctx;
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth must be used within an AuthProvider");
+  return context;
 }
