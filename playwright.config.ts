@@ -13,7 +13,7 @@ export default defineConfig({
   webServer: [
     {
       command: 'npm run dev -- --host 127.0.0.1',
-      cwd: '../bomach_os_react_port',
+      cwd: '../bomach_os',
       url: 'http://127.0.0.1:5173',
       reuseExistingServer: true,
       timeout: 120_000,

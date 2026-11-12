@@ -49,7 +49,7 @@ For the full local shared-host flow, run the backend, OS front door, and product
 source .venv/bin/activate
 python manage.py runserver
 
-# Terminal 2: from bomach_os_frontend/bomach_os_react_port
+# Terminal 2: from bomach_os_frontend/bomach_os
 npm run dev
 
 # Terminal 3: from bomach_os_frontend/marketing
