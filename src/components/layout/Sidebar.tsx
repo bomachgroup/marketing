@@ -9,6 +9,7 @@ import { accessibleNavGroups, NAVIGATION_GROUP_PRESENTATION } from '../../naviga
 import type { Campaign } from '../../data/types'
 import { Modal, HighlightText } from '../shared'
 import { AppIcon } from '../shared/AppIcon'
+import NotificationCenter from '../shared/NotificationCenter'
 import { capitalizeName } from '../../data/helpers'
 import { fuzzyMatch } from '../../utils/fuzzySearch'
 import AppSwitcher from '../shared/AppSwitcher'
@@ -36,7 +37,7 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
 
 export default function Sidebar() {
   const { currentRole, user, userRole, employeeDetails, logout, permissions, hasPermission } = useAuth()
-  const { notifs, setNotifs, leads, c4State } = useStore()
+  const { leads, c4State } = useStore()
   const campaigns = (c4State?.campaigns as Campaign[] | undefined) ?? []
   const { showToast } = useToast()
   const { mobileOpen, setMobileOpen, sidebarCollapsed, setSidebarCollapsed } = useShell()
@@ -73,20 +74,7 @@ export default function Sidebar() {
   }
   const openGroups = navigationState.openGroups
   const [search, setSearch] = useState('')
-  const [showNotifs, setShowNotifs] = useState(false)
-  const notifRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
-
-  // Close notif dropdown on outside click
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
-        setShowNotifs(false)
-      }
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [])
 
   // Focus search input on Ctrl+K / Cmd+K shortcut
   useEffect(() => {
@@ -138,8 +126,6 @@ export default function Sidebar() {
       : user.username?.slice(0, 2).toUpperCase() || 'AU'
     : 'TD'
 
-  const unreadCount = notifs.filter((n) => !n.read).length
-
   const handleNav = (screen: string) => {
     navigate({ to: `/${screen}` })
     setMobileOpen(false)
@@ -179,18 +165,6 @@ export default function Sidebar() {
     logout()
     showToast('Signed out successfully', 'info')
     navigate({ to: '/' })
-  }
-
-  const toggleNotifs = (e: React.MouseEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setShowNotifs((prev) => !prev)
-  }
-
-  const handleMarkAllRead = () => {
-    setNotifs(notifs.map((n) => ({ ...n, read: true })))
-    showToast('All notifications marked as read', 'success')
-    setShowNotifs(false)
   }
 
   // ── Search logic ────────────────────────────────────────────────────────
@@ -254,59 +228,7 @@ export default function Sidebar() {
 
         {/* Notifications bell icon */}
         <AppSwitcher compact placement="left" />
-        <div ref={notifRef} className="relative">
-          <button
-            type="button"
-            onClick={toggleNotifs}
-            className="relative flex h-9 w-9 items-center justify-center rounded-xl text-[#64718A] transition-colors hover:bg-[#EEF0F8] hover:text-[#1A2038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/30"
-            title="Notifications"
-            aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}
-            aria-expanded={showNotifs}
-          >
-            <AppIcon name="notification" size={18} />
-            {unreadCount > 0 && (
-              <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red border-2 border-[#F7F8FA]" />
-            )}
-          </button>
-
-          {showNotifs && (
-            <div className="fixed left-4 top-14 z-[9999] w-72 max-h-80 overflow-y-auto rounded-xl border border-[#E3E6EF] bg-white shadow-xl animate-in fade-in slide-in-from-top-1 duration-150">
-              <div className="flex items-center justify-between border-b border-[#E3E6EF] px-3 py-2.5">
-                <span className="text-[11px] font-bold text-[#1A2038]">Notifications</span>
-                {unreadCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={handleMarkAllRead}
-                    className="text-[10px] font-medium text-navy hover:underline"
-                  >
-                    Mark all read
-                  </button>
-                )}
-              </div>
-              {notifs.length === 0 ? (
-                <div className="px-3 py-5 text-center text-xs text-[#7B82A0]">No notifications</div>
-              ) : (
-                notifs.slice(0, 6).map((n, i) => (
-                  <div
-                    key={i}
-                    className={`flex items-start gap-2 border-b border-[#E3E6EF] px-3 py-2.5 text-xs ${n.read ? '' : 'bg-blue-50/60'}`}
-                  >
-                    <div
-                      className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px]"
-                      style={{ backgroundColor: n.bg, color: n.col }}
-                    >
-                      <AppIcon name="notification" size={13} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[11px] leading-snug text-[#1A2038]">{n.txt}</p>
-                      <span className="text-[10px] text-[#7B82A0]">{n.time}</span>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          )}
-        </div>
+        <NotificationCenter compact />
 
         {/* Collapse button (desktop only) */}
         <button
@@ -588,19 +510,9 @@ export default function Sidebar() {
 
       {/* Notifications */}
       <Tooltip label="Notifications">
-        <button
-          type="button"
-          onClick={(e) => {
-            setSidebarCollapsed(false)
-            toggleNotifs(e)
-          }}
-          className="relative mb-1 flex h-9 w-9 items-center justify-center rounded-xl text-[#64718A] transition-colors hover:bg-[#EEF0F8] hover:text-[#1A2038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/30"
-        >
-          <AppIcon name="notification" size={18} />
-          {unreadCount > 0 && (
-            <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-red border-2 border-[#F7F8FA]" />
-          )}
-        </button>
+        <div className="mb-1">
+          <NotificationCenter compact />
+        </div>
       </Tooltip>
 
       {/* One icon per group */}

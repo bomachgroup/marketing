@@ -79,6 +79,18 @@ function parseFieldMessageString(value: string) {
   return parsed.join(" ");
 }
 
+const TECHNICAL_ERROR =
+  /traceback|stack trace|django\.|pydantic|integrityerror|attributeerror|typeerror|keyerror|botocore|boto3|invalidaccesskeyid|signaturedoesnotmatch|for update cannot be applied|nullable side of an outer join|(?:not null|unique|foreign key) constraint failed|database is locked|sqlite(?:3)?\.|sql (?:syntax|error)/i;
+
+function sanitizeUserFacingMessage(message: string): string {
+  const trimmed = message.trim();
+  if (!trimmed) return "An unexpected error occurred.";
+  if (TECHNICAL_ERROR.test(trimmed)) {
+    return "BOMACH OS could not complete this request. Please try again shortly.";
+  }
+  return trimmed;
+}
+
 export function parseApiError(err: unknown): string {
   if (!err) return "An unexpected error occurred.";
 
@@ -102,13 +114,13 @@ export function parseApiError(err: unknown): string {
       }
 
       const fieldMessage = parseFieldMessageString(trimmed);
-      if (fieldMessage) return fieldMessage;
+      if (fieldMessage) return sanitizeUserFacingMessage(fieldMessage);
 
       const match = trimmed.match(
         /['"]?[\w.]+['"]?:\s*\[?['"]([^'"]+)['"]?\]?/,
       );
-      if (match) return match[1];
-      return trimmed;
+      if (match) return sanitizeUserFacingMessage(match[1]);
+      return sanitizeUserFacingMessage(trimmed);
     }
   }
 
@@ -138,10 +150,10 @@ export function parseApiError(err: unknown): string {
         messages.push(`${humanizeFieldName(field)}: ${parsedValue}`);
       }
     }
-    if (messages.length > 0) return messages.join(" ");
+    if (messages.length > 0) return sanitizeUserFacingMessage(messages.join(" "));
   }
 
-  return String(err);
+  return sanitizeUserFacingMessage(String(err));
 }
 
 function shouldAttemptRefresh(endpoint: string): boolean {
