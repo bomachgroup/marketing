@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { BusyLabel, EmptyState, ErrorState, Modal, SkeletonCardGrid, SkeletonKpiGrid, SkeletonList, Topbar, Select, NumberInput } from '../../shared'
 import { useToast } from '../../../context/ToastContext'
-import { marketingService } from '../../../services/api/marketingService'
+import { marketingService, type BackendCampaignRoutingOptions } from '../../../services/api/marketingService'
 import { teamService } from '../../../services/api/teamService'
 import { parseApiError } from '../../../services/api/apiClient'
 import { transformCampaignPanel, transformCampaignWorkspace } from '../../../services/transformers/marketingTransformers'
@@ -92,6 +92,8 @@ export function CampaignsPage() {
   const [riskForm, setRiskForm] = useState({ title: '', severity: 'medium', ownerId: '', mitigation: '' })
   const [postAnalysisForm, setPostAnalysisForm] = useState({ conclusion: '', worked: '', failed: '', nextActions: '', markCompleted: false })
   const [employeeOptions, setEmployeeOptions] = useState<SelectOption[]>([])
+  const [routingOptions, setRoutingOptions] = useState<BackendCampaignRoutingOptions | null>(null)
+  const [routingOptionsError, setRoutingOptionsError] = useState('')
   const [departmentOptions, setDepartmentOptions] = useState<SelectOption[]>([])
   const { showToast } = useToast()
 
@@ -107,6 +109,9 @@ export function CampaignsPage() {
     budgetSpent: '0',
     startDate: '',
     endDate: '',
+    branchId: '',
+    responderEmployeeIds: [] as string[],
+    autoAssignLeads: true,
   })
   const [requestForm, setRequestForm] = useState({
     title: '',
@@ -179,7 +184,10 @@ export function CampaignsPage() {
         teamService.listEmployees({ is_active: true, limit: 200 }),
         teamService.listDepartments({ limit: 200 }),
       ])
+      const routingRes = await marketingService.getCampaignLeadRoutingOptions()
       if (cancelled) return
+      if (routingRes.data) setRoutingOptions(routingRes.data)
+      else setRoutingOptionsError(parseApiError(routingRes.error || 'Could not load eligible campaign responders.'))
       if (employeeRes.data) {
         setEmployeeOptions(
           listFrom(employeeRes.data)
@@ -228,6 +236,9 @@ export function CampaignsPage() {
         budget_spent: Number(String(newCampaign.budgetSpent || 0).replace(/,/g, '')),
         start_date: newCampaign.startDate || null,
         end_date: newCampaign.endDate || null,
+        branch_id: newCampaign.branchId ? Number(newCampaign.branchId) : null,
+        responder_employee_ids: newCampaign.responderEmployeeIds.map(Number),
+        auto_assign_leads: newCampaign.autoAssignLeads,
       })
       if (!res.data) {
         showToast(parseApiError(res.error || 'Could not create campaign'), 'error')
@@ -248,6 +259,9 @@ export function CampaignsPage() {
         budgetSpent: '0',
         startDate: '',
         endDate: '',
+        branchId: '',
+        responderEmployeeIds: [],
+        autoAssignLeads: true,
       })
       await loadCampaignPanel()
     } finally {
@@ -607,6 +621,24 @@ export function CampaignsPage() {
         <fieldset disabled={isSaving} className="space-y-4 disabled:cursor-wait disabled:opacity-70">
           <Field label="Campaign Name" value={newCampaign.name} onChange={(value) => setNewCampaign({ ...newCampaign, name: value })} placeholder="e.g. Bethel City Q3 Diaspora Blitz" />
           <TextAreaField label="Description" value={newCampaign.description} onChange={(value) => setNewCampaign({ ...newCampaign, description: value })} placeholder="Campaign objective, audience, and operating context" />
+          <div className="rounded-xl border border-border bg-surface-1 p-3">
+            <div className="mb-3">
+              <SelectField label="Lead branch" value={newCampaign.branchId} onChange={(value) => setNewCampaign({ ...newCampaign, branchId: value })} options={[[ '', 'Company-wide / no branch'], ...(routingOptions?.branches || []).map((branch) => [String(branch.id), branch.name] as SelectOption)]} />
+            </div>
+            <MultiSelectField
+              label="Lead responders"
+              value={newCampaign.responderEmployeeIds}
+              onChange={(value) => setNewCampaign({ ...newCampaign, responderEmployeeIds: value })}
+              options={(routingOptions?.responders || []).map((employee) => [String(employee.id), employee.name] as SelectOption)}
+              disabled={!routingOptions}
+            />
+            {routingOptionsError && <p className="mt-2 text-[10px] font-semibold text-red-700" role="alert">{routingOptionsError}</p>}
+            <label className={`mt-3 flex items-start gap-2.5 rounded-lg border border-border bg-surface p-3 ${newCampaign.responderEmployeeIds.length ? 'cursor-pointer' : 'opacity-70'}`}>
+              <input aria-label="Auto-assign new leads round-robin" type="checkbox" checked={newCampaign.autoAssignLeads} disabled={!newCampaign.responderEmployeeIds.length} onChange={(event) => setNewCampaign({ ...newCampaign, autoAssignLeads: event.target.checked })} className="mt-0.5 accent-navy" />
+              <span><span className="block text-[11px] font-bold text-text">Auto-assign new leads round-robin</span><span className="mt-0.5 block text-[10px] text-text-3">Turn this off to leave new leads unassigned and alert all responders.</span></span>
+            </label>
+            {newCampaign.responderEmployeeIds.length === 0 && <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[10px] leading-relaxed text-amber-950" role="status">No responders selected. The campaign creator will be notified and assigned new enquiries if their employee profile is active and has access to Leads in this branch. Otherwise, add an eligible responder before publishing.</p>}
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Channel" value={newCampaign.channel} onChange={(value) => setNewCampaign({ ...newCampaign, channel: value })} placeholder="e.g. Meta Ads" />
             <SelectField label="Status" value={newCampaign.status} onChange={(value) => setNewCampaign({ ...newCampaign, status: value })} options={[['draft', 'Draft'], ['planned', 'Planned'], ['active', 'Active'], ['paused', 'Paused'], ['completed', 'Completed']]} />
@@ -862,6 +894,25 @@ function SelectField({ label, value, onChange, options }: { label: string; value
         onChange={onChange}
         className="w-full"
       />
+    </div>
+  )
+}
+
+function MultiSelectField({ label, value, onChange, options, disabled = false }: { label: string; value: string[]; onChange: (value: string[]) => void; options: [string, string][]; disabled?: boolean }) {
+  return (
+    <div>
+      <label className="block text-xs font-bold text-text-2 mb-1">{label}</label>
+      <select
+        multiple
+        value={value}
+        disabled={disabled}
+        aria-label={label}
+        onChange={(event) => onChange(Array.from(event.currentTarget.selectedOptions, (option) => option.value))}
+        className="w-full min-h-28 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-text outline-none focus:border-navy disabled:opacity-60"
+      >
+        {options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue} className="rounded-md py-1">{optionLabel}</option>)}
+      </select>
+      <p className="mt-1 text-[10px] text-text-3">Use Ctrl or Command to select more than one responder. Responders need Leads view-own and list-own access.</p>
     </div>
   )
 }

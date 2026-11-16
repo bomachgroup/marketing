@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useStore } from '../../context/StoreContext'
 import { useToast } from '../../context/ToastContext'
 import { BusyLabel, EmptyState, Modal, Select, SkeletonDetail, SkeletonForm, SkeletonList, Topbar } from '../shared'
 import type { Activity, Lead } from '../../data/types'
-import { marketingService } from '../../services/api/marketingService'
+import { marketingService, type BackendLeadAssignmentHistory } from '../../services/api/marketingService'
 import { transformBackendLead, transformBackendLeadActivity } from '../../services/transformers/marketingTransformers'
 import { parseApiError } from '../../services/api/apiClient'
 import { AppIcon } from '../../components/shared/AppIcon'
@@ -64,6 +64,10 @@ export function LeadJournalPage() {
   const [isLoadingLeads, setIsLoadingLeads] = useState(true)
   const [isLoadingActivities, setIsLoadingActivities] = useState(false)
   const [isSavingActivity, setIsSavingActivity] = useState(false)
+  const [showAssignmentHistory, setShowAssignmentHistory] = useState(false)
+  const [isLoadingAssignmentHistory, setIsLoadingAssignmentHistory] = useState(false)
+  const [assignmentHistory, setAssignmentHistory] = useState<BackendLeadAssignmentHistory[]>([])
+  const assignmentHistoryRequest = useRef(0)
 
   const [actType, setActType] = useState('Phone Call')
   const [actOutcome, setActOutcome] = useState('Connected')
@@ -251,8 +255,33 @@ export function LeadJournalPage() {
       : 'Unassigned'
   const selectedLeadHasBackendId = !!selectedLead?.id && backendLeadIds.includes(String(selectedLead.id))
 
+  const toggleAssignmentHistory = async () => {
+    if (!selectedLeadHasBackendId || !selectedLead) return
+    if (showAssignmentHistory) {
+      assignmentHistoryRequest.current += 1
+      setShowAssignmentHistory(false)
+      return
+    }
+    const requestId = ++assignmentHistoryRequest.current
+    setShowAssignmentHistory(true)
+    setIsLoadingAssignmentHistory(true)
+    const result = await marketingService.getLeadAssignmentHistory(selectedLead.id)
+    if (requestId !== assignmentHistoryRequest.current) return
+    if (result.data) {
+      setAssignmentHistory(result.data.results || [])
+    } else {
+      setAssignmentHistory([])
+      showToast(parseApiError(result.error || 'Could not load assignment history.'), 'error')
+    }
+    setIsLoadingAssignmentHistory(false)
+  }
+
   const handleSelectLead = (l: Lead) => {
+    assignmentHistoryRequest.current += 1
     setSelectedLead(l)
+    setShowAssignmentHistory(false)
+    setIsLoadingAssignmentHistory(false)
+    setAssignmentHistory([])
     setActNotes('')
     setActNext('')
     setActNextDate('')
@@ -594,6 +623,31 @@ export function LeadJournalPage() {
                   <div className="text-[10px] font-medium text-text-3">Next follow-up</div>
                   <div className="mt-0.5 break-words text-xs font-bold text-text">Not set</div>
                 </div>
+              </div>
+
+              <div className="border-t border-border/80 pt-2">
+                <button
+                  type="button"
+                  onClick={() => void toggleAssignmentHistory()}
+                  disabled={!selectedLeadHasBackendId || isLoadingAssignmentHistory}
+                  aria-expanded={showAssignmentHistory}
+                  className="text-[11px] font-bold text-navy hover:text-navy-dark disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isLoadingAssignmentHistory ? 'Loading assignment history...' : showAssignmentHistory ? 'Hide assignment history' : 'View assignment history'}
+                </button>
+                {showAssignmentHistory && !isLoadingAssignmentHistory && (
+                  <div className="mt-2 space-y-2" aria-label="Lead assignment history">
+                    {assignmentHistory.length ? assignmentHistory.map((entry) => (
+                      <div key={entry.id} className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-lg border border-border/70 bg-surface-1 px-2.5 py-2 text-[10.5px]">
+                        <span className="min-w-0 break-words font-semibold text-text">
+                          {entry.previous_assignee_name || 'Unassigned'} <span aria-hidden="true">→</span> {entry.assignee_name || 'Unassigned'}
+                          {entry.actor_name ? <span className="font-medium text-text-3"> · by {entry.actor_name}</span> : null}
+                        </span>
+                        <span className="shrink-0 text-text-3">{entry.source.replaceAll('_', ' ')} · {new Date(entry.created_at).toLocaleString()}</span>
+                      </div>
+                    )) : <p className="rounded-lg bg-surface-1 px-2.5 py-2 text-[10.5px] text-text-3">No assignment changes have been recorded.</p>}
+                  </div>
+                )}
               </div>
             </div>
 

@@ -57,6 +57,39 @@ export interface BackendCampaignCreate {
   end_date?: string | null
   division?: string
   target_leads?: number
+  branch_id?: number | null
+  responder_employee_ids?: number[]
+  auto_assign_leads?: boolean
+}
+
+export interface BackendCampaignRoutingOptions {
+  branches: Array<{ id: number; name: string }>
+  responders: Array<{ id: number; name: string; branch_id?: number | null }>
+  assignees: Array<{ id: number; name: string; branch_id?: number | null }>
+}
+
+export interface BackendCampaignRecord {
+  id: number
+  name: string
+  branch_id?: number | null
+  created_by_id?: number | null
+  created_by_employee_id?: number | null
+  created_by_name?: string | null
+  responder_employee_ids: number[]
+  responder_names: string[]
+  auto_assign_leads: boolean
+}
+
+export interface BackendLeadAssignmentHistory {
+  id: number
+  previous_assignee_id?: number | null
+  previous_assignee_name?: string | null
+  assignee_id?: number | null
+  assignee_name?: string | null
+  actor_id?: number | null
+  actor_name?: string | null
+  source: string
+  created_at: string
 }
 
 export interface BackendCampaignPage {
@@ -125,6 +158,8 @@ export interface BackendLeadCaptureSubmission {
   email: string
   location: string
   status: string
+  assigned_to_id?: number | null
+  assigned_to_name?: string | null
   answers: Record<string, unknown>
   possible_duplicate_of?: number | null
   submitted_at: string
@@ -949,6 +984,9 @@ function normalizeCampaignCreatePayload(payload: BackendCampaignCreate): JsonPay
     budget_spent: normalized.budget_spent,
     start_date: normalized.start_date || null,
     end_date: normalized.end_date || null,
+    branch_id: normalized.branch_id ?? null,
+    responder_employee_ids: normalized.responder_employee_ids ?? [],
+    auto_assign_leads: normalized.auto_assign_leads ?? true,
   }
 
   Object.keys(body).forEach((key) => {
@@ -1002,6 +1040,10 @@ export const marketingService = {
 
   getLeadDetail: async (leadId: string | number) => {
     return apiRequest(`/api/v1/leads/${leadId}`)
+  },
+
+  getLeadAssignmentHistory: async (leadId: string | number) => {
+    return apiRequest<{ results: BackendLeadAssignmentHistory[] }>(`/api/v1/leads/${leadId}/assignment-history`)
   },
 
   getLeadPipeline: async (params?: LeadPipelineParams) => {
@@ -1064,6 +1106,14 @@ export const marketingService = {
   // --- CAMPAIGNS ---
   getCampaigns: async (params?: { limit?: number; offset?: number; status?: string }) => {
     return apiRequest(`/api/v1/marketing-campaigns${toQuery(params)}`)
+  },
+
+  getCampaign: async (campaignId: string | number) => {
+    return apiRequest<BackendCampaignRecord>(`/api/v1/marketing-campaigns/${campaignId}`)
+  },
+
+  getCampaignLeadRoutingOptions: async () => {
+    return apiRequest<BackendCampaignRoutingOptions>('/api/v1/marketing-campaigns/lead-routing-options')
   },
 
   createCampaign: async (payload: BackendCampaignCreate) => {
@@ -1182,6 +1232,34 @@ export const marketingService = {
   ) => {
     return apiRequest<{ count: number; items: BackendLeadCaptureSubmission[] }>(
       `/api/v1/marketing-campaigns/${campaignId}/lead-forms/${formId}/submissions${toQuery(params)}`,
+    )
+  },
+
+  assignCampaignSubmission: async (
+    campaignId: string | number,
+    formId: string | number,
+    submissionId: string | number,
+    assignedToId: number | null,
+  ) => {
+    return apiRequest<BackendLeadCaptureSubmission>(
+      `/api/v1/marketing-campaigns/${campaignId}/lead-forms/${formId}/submissions/${submissionId}/assign`,
+      { method: 'PATCH', body: JSON.stringify({ assigned_to_id: assignedToId }) },
+    )
+  },
+
+  getCampaignSubmissionAssignmentHistory: async (
+    campaignId: string | number,
+    formId: string | number,
+    submissionId: string | number,
+  ) => {
+    return apiRequest<{ results: BackendLeadAssignmentHistory[] }>(
+      `/api/v1/marketing-campaigns/${campaignId}/lead-forms/${formId}/submissions/${submissionId}/assignment-history`,
+    )
+  },
+
+  getMyCampaignSubmissions: async (params?: { campaign_id?: number; limit?: number; offset?: number }) => {
+    return apiRequest<{ count: number; items: BackendLeadCaptureSubmission[] }>(
+      `/api/v1/marketing-campaigns/my-submissions${toQuery(params)}`,
     )
   },
 

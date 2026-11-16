@@ -5,14 +5,17 @@ import { useToast } from '../../../context/ToastContext'
 import {
   marketingService,
   type BackendCampaignPage,
+  type BackendCampaignRecord,
+  type BackendCampaignRoutingOptions,
   type BackendLeadCaptureForm,
   type BackendLeadCaptureQuestion,
+  type BackendLeadAssignmentHistory,
   type BackendLeadCaptureSubmission,
 } from '../../../services/api/marketingService'
 import { parseApiError } from '../../../services/api/apiClient'
 import { transformMediaLibrary } from '../../../services/transformers/marketingTransformers'
 
-type PageTab = 'page' | 'form' | 'submissions'
+type PageTab = 'page' | 'form' | 'routing' | 'submissions'
 
 const DEFAULT_PAGE: BackendCampaignPage = {
   slug: 'fortress-city',
@@ -146,6 +149,16 @@ export function CampaignPublicPagePanel({ campaignId, campaignName, campaignStat
   const [forms, setForms] = useState<BackendLeadCaptureForm[]>([])
   const [selectedFormId, setSelectedFormId] = useState('')
   const [submissions, setSubmissions] = useState<BackendLeadCaptureSubmission[]>([])
+  const [campaign, setCampaign] = useState<BackendCampaignRecord | null>(null)
+  const [routingOptions, setRoutingOptions] = useState<BackendCampaignRoutingOptions | null>(null)
+  const [responderIds, setResponderIds] = useState<string[]>([])
+  const [autoAssignLeads, setAutoAssignLeads] = useState(true)
+  const [routingLoading, setRoutingLoading] = useState(true)
+  const [routingSaving, setRoutingSaving] = useState(false)
+  const [routingError, setRoutingError] = useState('')
+  const [historyFor, setHistoryFor] = useState<number | null>(null)
+  const [assignmentHistory, setAssignmentHistory] = useState<BackendLeadAssignmentHistory[]>([])
+  const [assignmentBusy, setAssignmentBusy] = useState<number | null>(null)
   const [submissionCount, setSubmissionCount] = useState(0)
   const [pageLoading, setPageLoading] = useState(true)
   const [formLoading, setFormLoading] = useState(true)
@@ -163,11 +176,22 @@ export function CampaignPublicPagePanel({ campaignId, campaignName, campaignStat
       setPageLoading(true)
       setFormLoading(true)
       setError('')
-      const [pageResult, formsResult] = await Promise.all([
+      const [pageResult, formsResult, campaignResult, routingResult] = await Promise.all([
         marketingService.getCampaignPublicPage(campaignId),
         marketingService.getLeadCaptureForms(campaignId),
+        marketingService.getCampaign(campaignId),
+        marketingService.getCampaignLeadRoutingOptions(),
       ])
       if (cancelled) return
+      if (campaignResult.data) {
+        const record = campaignResult.data as BackendCampaignRecord
+        setCampaign(record)
+        setResponderIds((record.responder_employee_ids || []).map(String))
+        setAutoAssignLeads(record.auto_assign_leads !== false)
+      }
+      if (routingResult.data) setRoutingOptions(routingResult.data)
+      else setRoutingError(parseApiError(routingResult.error || 'Could not load lead routing options.'))
+      setRoutingLoading(false)
       if (pageResult.data) {
         const data = pageResult.data as BackendCampaignPage
         setPage(data)
@@ -205,6 +229,52 @@ export function CampaignPublicPagePanel({ campaignId, campaignName, campaignStat
       showToast(parseApiError(result.error || 'Could not load enquiries.'), 'error')
     }
     setSubmissionsLoading(false)
+  }
+
+  async function saveRouting() {
+    setRoutingSaving(true)
+    const result = await marketingService.updateCampaign(campaignId, {
+      responder_employee_ids: responderIds.map(Number),
+      auto_assign_leads: autoAssignLeads,
+    })
+    if (result.data) {
+      setCampaign(result.data as BackendCampaignRecord)
+      showToast('Campaign lead routing updated.', 'success')
+    } else {
+      showToast(parseApiError(result.error || 'Could not update lead routing.'), 'error')
+    }
+    setRoutingSaving(false)
+  }
+
+  async function assignSubmission(submission: BackendLeadCaptureSubmission, assignedToId: number | null) {
+    const formId = submission.form_id || Number(selectedFormId)
+    if (!formId) return
+    setAssignmentBusy(submission.id)
+    const result = await marketingService.assignCampaignSubmission(campaignId, formId, submission.id, assignedToId)
+    if (result.data) {
+      const updated = result.data as BackendLeadCaptureSubmission
+      setSubmissions((current) => current.map((item) => item.id === updated.id ? updated : item))
+      showToast('Lead assignment updated.', 'success')
+    } else {
+      showToast(parseApiError(result.error || 'Could not update lead assignment.'), 'error')
+    }
+    setAssignmentBusy(null)
+  }
+
+  async function toggleAssignmentHistory(submission: BackendLeadCaptureSubmission) {
+    if (historyFor === submission.id) {
+      setHistoryFor(null)
+      return
+    }
+    const formId = submission.form_id || Number(selectedFormId)
+    if (!formId) return
+    const result = await marketingService.getCampaignSubmissionAssignmentHistory(campaignId, formId, submission.id)
+    if (result.data) {
+      setAssignmentHistory(result.data.results || [])
+      setHistoryFor(submission.id)
+    } else {
+      showToast(parseApiError(result.error || 'Could not load assignment history.'), 'error')
+    }
   }
 
   async function openMediaLibrary() {
@@ -342,6 +412,7 @@ export function CampaignPublicPagePanel({ campaignId, campaignName, campaignStat
         {([
           ['page', 'Page content'],
           ['form', 'Lead form'],
+          ['routing', 'Lead routing'],
           ['submissions', `Enquiries${submissionCount ? ` (${submissionCount})` : ''}`],
         ] as [PageTab, string][]).map(([value, label]) => (
           <button key={value} type="button" role="tab" aria-selected={tab === value} onClick={() => { setTab(value); if (value === 'submissions') void loadSubmissions() }} className={`rounded-lg px-3 py-1.5 text-[11px] font-bold transition-colors ${tab === value ? 'bg-navy text-white' : 'text-text-3 hover:bg-surface hover:text-text'}`}>
@@ -478,6 +549,39 @@ export function CampaignPublicPagePanel({ campaignId, campaignName, campaignStat
         </div>
       )}
 
+      {!pageLoading && tab === 'routing' && (
+        <div className="space-y-3">
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <div className="text-xs font-bold text-text">Lead response team</div>
+            <p className="mt-1 text-[10.5px] leading-relaxed text-text-3">Responders receive campaign and lead assignment notifications. Membership does not grant access to other employees' leads; each responder must have Leads view-own and list-own permission.</p>
+          </div>
+          {routingLoading ? <div className="py-3 text-xs text-text-3"><BusyLabel>Loading eligible employees...</BusyLabel></div> : routingError ? <ErrorState message={routingError} compact /> : (
+            <>
+              <label className="block min-w-0">
+                <span className="mb-1 block text-[10.5px] font-bold text-text-2">Campaign responders</span>
+                <select aria-label="Campaign responders" multiple value={responderIds} onChange={(event) => setResponderIds(Array.from(event.currentTarget.selectedOptions, (option) => option.value))} className="w-full min-h-32 rounded-xl border border-border bg-surface px-3 py-2 text-xs text-text outline-none focus:border-navy">
+                  {(routingOptions?.responders || []).map((employee) => <option key={employee.id} value={employee.id} className="rounded-md py-1">{employee.name}</option>)}
+                </select>
+                <span className="mt-1 block text-[10px] text-text-3">Use Ctrl or Command to select multiple employees.</span>
+              </label>
+              {responderIds.length > 0 ? (
+                <label className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-border bg-surface p-3">
+                  <input aria-label="Auto-assign new leads round-robin" type="checkbox" checked={autoAssignLeads} onChange={(event) => setAutoAssignLeads(event.target.checked)} className="mt-0.5 accent-navy" />
+                  <span><span className="block text-[11px] font-bold text-text">Auto-assign new leads round-robin</span><span className="mt-0.5 block text-[10px] text-text-3">When off, leads remain unassigned and all responders are notified to coordinate assignment.</span></span>
+                </label>
+              ) : (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-[10.5px] leading-relaxed text-amber-950" role="status">
+                  {campaign?.created_by_employee_id ? <><strong>Creator fallback is active.</strong> {campaign.created_by_name || 'The campaign creator'} will be notified and assigned each new enquiry while no responders are configured.</> : <><strong>Responder setup required.</strong> This campaign has no recorded eligible creator. Configure at least one responder before publishing or accepting enquiries.</>}
+                </div>
+              )}
+              <div className="flex justify-end border-t border-border pt-3">
+                <button type="button" onClick={() => void saveRouting()} disabled={routingSaving || routingLoading} className="rounded-xl bg-navy px-4 py-2 text-[11px] font-bold text-white hover:bg-navy-dark disabled:opacity-50">{routingSaving ? <BusyLabel>Saving...</BusyLabel> : 'Save lead routing'}</button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {!pageLoading && tab === 'submissions' && (
         <div className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -497,6 +601,26 @@ export function CampaignPublicPagePanel({ campaignId, campaignName, campaignStat
                 <div><div className="text-xs font-bold text-text">{submission.full_name}</div><div className="mt-0.5 text-[10.5px] text-text-3">{submission.phone}{submission.email ? ` · ${submission.email}` : ''} · {submission.location}</div></div>
                 <div className="flex items-center gap-2"><span className="rounded-full bg-surface-2 px-2 py-1 text-[9.5px] font-bold text-text-2">{submission.status}</span>{submission.possible_duplicate_of && <span className="rounded-full bg-amber-50 px-2 py-1 text-[9.5px] font-bold text-amber-900">Possible duplicate</span>}</div>
               </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg bg-surface-1 px-2.5 py-2">
+                <span className="text-[10px] font-bold text-text-2">Lead owner</span>
+                <select
+                  aria-label={`Lead owner for ${submission.full_name}`}
+                  value={submission.assigned_to_id ? String(submission.assigned_to_id) : ''}
+                  disabled={assignmentBusy === submission.id}
+                  onChange={(event) => void assignSubmission(submission, event.target.value ? Number(event.target.value) : null)}
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[10.5px] text-text"
+                >
+                  <option value="">Unassigned</option>
+                  {campaign?.responder_employee_ids?.length ? (routingOptions?.responders || []).filter((employee) => campaign.responder_employee_ids.includes(employee.id)).map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>) : campaign?.created_by_employee_id ? <option value={campaign.created_by_employee_id}>{campaign.created_by_name || 'Campaign creator'}</option> : null}
+                </select>
+                {assignmentBusy === submission.id && <span className="text-[10px] text-text-3">Saving...</span>}
+                <button type="button" onClick={() => void toggleAssignmentHistory(submission)} className="rounded-lg border border-border bg-surface px-2.5 py-1.5 text-[10px] font-bold text-text hover:bg-surface-2">{historyFor === submission.id ? 'Hide history' : 'Assignment history'}</button>
+              </div>
+              {historyFor === submission.id && (
+                <div className="mt-2 space-y-1 rounded-lg border border-border bg-surface-1 p-2.5" aria-label="Lead assignment history">
+                  {assignmentHistory.length ? assignmentHistory.map((item) => <div key={item.id} className="flex flex-wrap justify-between gap-x-3 gap-y-1 text-[10px] text-text-2"><span>{item.previous_assignee_name || 'Unassigned'} → {item.assignee_name || 'Unassigned'}{item.actor_name ? ` · by ${item.actor_name}` : ''}</span><span className="text-text-3">{formatSubmittedAt(item.created_at)}</span></div>) : <p className="text-[10px] text-text-3">No assignment changes recorded yet.</p>}
+                </div>
+              )}
               <div className="mt-2 grid grid-cols-1 gap-1 sm:grid-cols-2">
                 {Object.entries(submission.answers || {}).map(([key, value]) => <div key={key} className="rounded-lg bg-surface-1 px-2.5 py-2 text-[10px] text-text-2"><span className="font-bold">{selectedForm?.questions.find((question) => question.key === key)?.label || key}:</span> {typeof value === 'boolean' ? value ? 'Yes' : 'No' : Array.isArray(value) ? value.join(', ') : String(value ?? '—')}</div>)}
               </div>

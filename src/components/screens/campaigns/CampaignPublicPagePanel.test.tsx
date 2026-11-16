@@ -10,6 +10,11 @@ vi.mock('../../../context/ToastContext', () => ({
 vi.mock('../../../services/api/marketingService', () => ({
   marketingService: {
     getCampaignPublicPage: vi.fn(),
+    getCampaign: vi.fn(),
+    getCampaignLeadRoutingOptions: vi.fn(),
+    updateCampaign: vi.fn(),
+    assignCampaignSubmission: vi.fn(),
+    getCampaignSubmissionAssignmentHistory: vi.fn(),
     deleteCampaignPublicPage: vi.fn(),
     getLeadCaptureForms: vi.fn(),
     createLeadCaptureForm: vi.fn(),
@@ -64,6 +69,11 @@ describe('CampaignPublicPagePanel', () => {
   beforeEach(() => {
     vi.resetAllMocks()
     mockedService.getCampaignPublicPage.mockResolvedValue({ status: 404, error: 'Not found' })
+    mockedService.getCampaign.mockResolvedValue({ status: 200, data: { id: 7, name: 'Fortress City Estate', created_by_employee_id: 20, created_by_name: 'Campaign owner', responder_employee_ids: [], responder_names: [], auto_assign_leads: true } })
+    mockedService.getCampaignLeadRoutingOptions.mockResolvedValue({ status: 200, data: { branches: [], responders: [{ id: 21, name: 'Responder One' }, { id: 22, name: 'Responder Two' }], assignees: [] } })
+    mockedService.updateCampaign.mockResolvedValue({ status: 200, data: { id: 7, name: 'Fortress City Estate', created_by_employee_id: 20, created_by_name: 'Campaign owner', responder_employee_ids: [21, 22], responder_names: ['Responder One', 'Responder Two'], auto_assign_leads: true } })
+    mockedService.assignCampaignSubmission.mockResolvedValue({ status: 200, data: { id: 4, form_id: 5, form_name: form.name, lead_id: 8, full_name: 'Test Lead', phone: '08000000000', email: '', location: 'Enugu', status: 'new', assigned_to_id: 21, assigned_to_name: 'Responder One', answers: {}, submitted_at: '2026-11-06T10:00:00Z' } })
+    mockedService.getCampaignSubmissionAssignmentHistory.mockResolvedValue({ status: 200, data: { results: [] } })
     mockedService.deleteCampaignPublicPage.mockResolvedValue({ status: 200, data: { detail: 'Deleted' } })
     mockedService.getLeadCaptureForms.mockResolvedValue({ status: 200, data: [] })
     mockedService.createLeadCaptureForm.mockResolvedValue({ status: 201, data: form })
@@ -91,6 +101,20 @@ describe('CampaignPublicPagePanel', () => {
     expect(payload.questions.find((question) => question.key === 'preferred_contact_method')?.required).toBe(true)
     expect(payload.questions.find((question) => question.key === 'contact_consent')).toMatchObject({ field_type: 'checkbox', required: true })
     expect(await screen.findByText('Public form key:')).toBeInTheDocument()
+  })
+
+  it('allows campaign routing to select multiple responders and save auto-assignment', async () => {
+    render(<CampaignPublicPagePanel campaignId={7} campaignName="Fortress City Estate" campaignStatus="active" />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Lead routing' }))
+    const responders = await screen.findByRole('listbox', { name: 'Campaign responders' }) as HTMLSelectElement
+    Array.from(responders.options).forEach((option) => { option.selected = true })
+    fireEvent.change(responders)
+    fireEvent.click(screen.getByLabelText('Auto-assign new leads round-robin'))
+    fireEvent.click(screen.getByRole('button', { name: 'Save lead routing' }))
+    await waitFor(() => expect(mockedService.updateCampaign).toHaveBeenCalledWith(7, {
+      responder_employee_ids: [21, 22],
+      auto_assign_leads: false,
+    }))
   })
 
   it('starts new campaign pages with the approved estate description and details', async () => {
@@ -133,6 +157,58 @@ describe('CampaignPublicPagePanel', () => {
     expect(await screen.findByText('Ada Example')).toBeInTheDocument()
     expect(screen.getByText('Possible duplicate')).toBeInTheDocument()
     expect(mockedService.getLeadCaptureSubmissions).toHaveBeenCalledWith(7, '5', { limit: 20, offset: 0 })
+  })
+
+  it('shows lead owners and assignment history in campaign enquiries', async () => {
+    mockedService.getCampaign.mockResolvedValue({
+      status: 200,
+      data: {
+        id: 7,
+        name: 'Fortress City Estate',
+        created_by_employee_id: 20,
+        created_by_name: 'Campaign owner',
+        responder_employee_ids: [21, 22],
+        responder_names: ['Responder One', 'Responder Two'],
+        auto_assign_leads: true,
+      },
+    })
+    mockedService.getCampaignPublicPage.mockResolvedValue({ status: 200, data: { ...page, id: 9, lead_form_id: 5 } })
+    mockedService.getLeadCaptureForms.mockResolvedValue({ status: 200, data: [{ ...form, status: 'active', questions: [] }] })
+    mockedService.getLeadCaptureSubmissions.mockResolvedValue({
+      status: 200,
+      data: {
+        count: 1,
+        items: [{
+          id: 11,
+          form_id: 5,
+          form_name: form.name,
+          lead_id: 21,
+          full_name: 'Ada Example',
+          phone: '+2348000000000',
+          email: '',
+          location: 'Enugu',
+          status: 'new',
+          assigned_to_id: 21,
+          assigned_to_name: 'Responder One',
+          answers: { contact_consent: true },
+          submitted_at: '2026-11-06T10:00:00Z',
+        }],
+      },
+    })
+    mockedService.getCampaignSubmissionAssignmentHistory.mockResolvedValue({
+      status: 200,
+      data: { results: [{ id: 1, previous_assignee_name: 'Unassigned', assignee_name: 'Responder One', source: 'campaign_auto', created_at: '2026-11-06T10:00:00Z' }] },
+    })
+
+    render(<CampaignPublicPagePanel campaignId={7} campaignName="Fortress City Estate" campaignStatus="active" />)
+    fireEvent.click(await screen.findByRole('tab', { name: 'Enquiries' }))
+
+    const owner = await screen.findByRole('combobox', { name: 'Lead owner for Ada Example' })
+    fireEvent.change(owner, { target: { value: '22' } })
+    await waitFor(() => expect(mockedService.assignCampaignSubmission).toHaveBeenCalledWith(7, 5, 11, 22))
+    fireEvent.click(screen.getByRole('button', { name: 'Assignment history' }))
+    expect(await screen.findByText(/Unassigned.*Responder One/)).toBeInTheDocument()
+    expect(mockedService.getCampaignSubmissionAssignmentHistory).toHaveBeenCalledWith(7, 5, 11)
   })
 
   it('activates the selected form through the campaign form controls', async () => {
