@@ -51,6 +51,61 @@ export const DISABLED_SCREENS = new Set([
   "audit-log",
 ]);
 
+export const NAVIGATION_GROUP_PRESENTATION: Record<
+  string,
+  { section: string; icon: string; order: number }
+> = {
+  "Integrated work": { section: "Workspace", icon: "ti-device-desktop", order: 0 },
+  "Revenue execution": { section: "Workspace", icon: "ti-command", order: 1 },
+  Overview: { section: "Workspace", icon: "ti-layout-dashboard", order: 2 },
+  "Revenue controls": { section: "Workspace", icon: "ti-radar-2", order: 3 },
+  Marketing: { section: "Marketing", icon: "ti-ad", order: 4 },
+  Operations: { section: "Operations", icon: "ti-briefcase", order: 5 },
+  Team: { section: "People", icon: "ti-users-group", order: 6 },
+  "Enablement & growth": { section: "Marketing", icon: "ti-book-2", order: 7 },
+  "Commercial operations": { section: "Operations", icon: "ti-transfer", order: 8 },
+  Governance: { section: "Governance", icon: "ti-lock-access", order: 9 },
+  "Campaign Operations": { section: "Marketing", icon: "ti-calendar-event", order: 10 },
+};
+
+const SCREEN_NAVIGATION_GROUP: Record<string, string> = {
+  workdesk: "Integrated work",
+  "lead-journal": "Integrated work",
+  "revenue-command": "Revenue execution",
+  "daily-execution": "Revenue execution",
+  turnaround: "Revenue execution",
+  dashboard: "Overview",
+  okrs: "Overview",
+  "lead-control": "Revenue controls",
+  "funnel-audit": "Revenue controls",
+  forecast: "Revenue controls",
+  compliance: "Revenue controls",
+  pipeline: "Marketing",
+  campaigns: "Marketing",
+  calendar: "Marketing",
+  media: "Marketing",
+  design: "Marketing",
+  partners: "Operations",
+  analytics: "Operations",
+  support: "Operations",
+  whatsapp: "Operations",
+  "team-directory": "Team",
+  "new-lead": "Team",
+  playbooks: "Enablement & growth",
+  coaching: "Enablement & growth",
+  "content-studio": "Enablement & growth",
+  retention: "Enablement & growth",
+  "email-center": "Commercial operations",
+  "media-register": "Commercial operations",
+  handoff: "Commercial operations",
+  "realtor-portal": "Commercial operations",
+  "partner-portal": "Commercial operations",
+  "role-governance": "Governance",
+  approvals: "Governance",
+  "audit-log": "Governance",
+  "marketing-meetings": "Campaign Operations",
+};
+
 export function screenPath(screen: string): string {
   return "/" + screen;
 }
@@ -70,24 +125,30 @@ export function accessibleNavGroups(
 ): NavGroup[] {
   const sourceGroups = allRoleNavGroups();
   const seenScreens = new Set<string>();
-  const groups: NavGroup[] = [];
+  const groupedItems = new Map<string, NavGroup["items"]>();
 
   sourceGroups.forEach((group) => {
-    const items = group.items.filter((item) => {
-      if (DISABLED_SCREENS.has(item.s)) return false;
-      if (item.s === "integrations") return false;
-      if (seenScreens.has(item.s)) return false;
-      if (!hasPermission(item.s, "view")) return false;
+    group.items.forEach((item) => {
+      if (DISABLED_SCREENS.has(item.s)) return;
+      if (item.s === "integrations") return;
+      if (seenScreens.has(item.s)) return;
+      if (!hasPermission(item.s, "view")) return;
       seenScreens.add(item.s);
-      return true;
-    });
 
-    if (items.length > 0) {
-      groups.push({ ...group, items });
-    }
+      const groupName = SCREEN_NAVIGATION_GROUP[item.s] ?? group.g;
+      const items = groupedItems.get(groupName) ?? [];
+      items.push(item);
+      groupedItems.set(groupName, items);
+    });
   });
 
-  return groups;
+  return [...groupedItems.entries()]
+    .sort(([left], [right]) => {
+      const leftOrder = NAVIGATION_GROUP_PRESENTATION[left]?.order ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = NAVIGATION_GROUP_PRESENTATION[right]?.order ?? Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder || left.localeCompare(right);
+    })
+    .map(([groupName, items]) => ({ g: groupName, items }));
 }
 
 export function firstAccessibleScreen(

@@ -18,6 +18,23 @@ describe("permission-aware navigation", () => {
 
     expect(visible).toEqual([]);
   });
+
+  it("groups permitted screens into the navigation sections in presentation order", () => {
+    const permitted = new Set(["campaigns", "pipeline", "marketing-meetings", "workdesk"]);
+    const visible = accessibleNavGroups("staff", {}, (resource) => permitted.has(resource));
+
+    expect(visible.map((group) => group.g)).toEqual([
+      "Integrated work",
+      "Marketing",
+      "Campaign Operations",
+    ]);
+    expect(visible.flatMap((group) => group.items.map((item) => item.s))).toEqual([
+      "workdesk",
+      "pipeline",
+      "campaigns",
+      "marketing-meetings",
+    ]);
+  });
 });
 
 describe("Marketing base path", () => {

@@ -5,7 +5,7 @@ import { useStore } from '../../context/StoreContext'
 import { useToast } from '../../context/ToastContext'
 import { useShell } from '../../context/ShellContext'
 import { ROLES } from '../../data/defaults'
-import { accessibleNavGroups } from '../../navigation'
+import { accessibleNavGroups, NAVIGATION_GROUP_PRESENTATION } from '../../navigation'
 import type { Campaign } from '../../data/types'
 import { Modal, HighlightText } from '../shared'
 import { AppIcon } from '../shared/AppIcon'
@@ -53,22 +53,29 @@ export default function Sidebar() {
     g.items.some((item) => activePath === `/${item.s}`)
   )?.g ?? navGroups[0]?.g
 
-  const [openGroup, setOpenGroup] = useState<string>(activeGroup)
+  const [navigationState, setNavigationState] = useState(() => ({
+    activePath,
+    activeGroup,
+    openGroups: activeGroup ? [activeGroup] : [],
+  }))
+  if (
+    navigationState.activePath !== activePath ||
+    navigationState.activeGroup !== activeGroup
+  ) {
+    setNavigationState((current) => ({
+      activePath,
+      activeGroup,
+      openGroups:
+        activeGroup && !current.openGroups.includes(activeGroup)
+          ? [...current.openGroups, activeGroup]
+          : current.openGroups,
+    }))
+  }
+  const openGroups = navigationState.openGroups
   const [search, setSearch] = useState('')
   const [showNotifs, setShowNotifs] = useState(false)
   const notifRef = useRef<HTMLDivElement>(null)
   const searchRef = useRef<HTMLInputElement>(null)
-
-  // Keep the active group open when route changes
-  useEffect(() => {
-    const current = navGroups.find((g) =>
-      g.items.some((item) => activePath === `/${item.s}`)
-    )?.g
-    const timer = window.setTimeout(() => {
-      if (current) setOpenGroup(current)
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [activePath, navGroups])
 
   // Close notif dropdown on outside click
   useEffect(() => {
@@ -140,15 +147,30 @@ export default function Sidebar() {
   }
 
   const handleGroupClick = (groupName: string) => {
-    if (openGroup === groupName) {
-      setOpenGroup('')
-    } else {
-      setOpenGroup(groupName)
-      // Navigate to first item of newly opened group
-      const group = navGroups.find((g) => g.g === groupName)
-      if (group?.items[0]) handleNav(group.items[0].s)
-    }
+    setNavigationState((current) => ({
+      ...current,
+      openGroups: current.openGroups.includes(groupName)
+        ? current.openGroups.filter((name) => name !== groupName)
+        : [...current.openGroups, groupName],
+    }))
   }
+
+  const navigationSections = useMemo(() => {
+    const sections = new Map<string, typeof navGroups>()
+    navGroups.forEach((group) => {
+      const section = NAVIGATION_GROUP_PRESENTATION[group.g]?.section ?? 'More'
+      const groups = sections.get(section) ?? []
+      groups.push(group)
+      sections.set(section, groups)
+    })
+    return [...sections.entries()]
+  }, [navGroups])
+
+  const groupIcon = (groupName: string) =>
+    NAVIGATION_GROUP_PRESENTATION[groupName]?.icon ?? 'ti-layout-dashboard'
+
+  const groupId = (groupName: string) =>
+    `marketing-nav-${groupName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`
 
   const [showLogoutModal, setShowLogoutModal] = useState(false)
 
@@ -211,30 +233,35 @@ export default function Sidebar() {
   const expandedContent = (
     <div className="flex h-full flex-col overflow-hidden">
       {/* Brand header */}
-      <div className="flex h-14 shrink-0 items-center gap-2 px-4">
-        <AppSwitcher compact placement="left" />
+      <div className="flex h-20 shrink-0 items-center gap-2.5 border-b border-[#E3E6EF] px-4">
         <div
-          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-navy text-sm font-bold text-white shadow-sm"
+          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-navy text-base font-bold text-white shadow-sm"
           style={{ fontFamily: 'var(--font-heading)' }}
         >
           B
         </div>
         <div className="min-w-0 flex-1">
           <div
-            className="truncate text-[13px] font-bold leading-tight text-[#1A2038]"
+            className="truncate text-sm font-bold leading-tight text-[#1A2038]"
             style={{ fontFamily: 'var(--font-heading)' }}
           >
+            Marketing
+          </div>
+          <div className="mt-0.5 truncate text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7B82A0]">
             Bomach OS
           </div>
         </div>
 
         {/* Notifications bell icon */}
+        <AppSwitcher compact placement="left" />
         <div ref={notifRef} className="relative">
           <button
             type="button"
             onClick={toggleNotifs}
-            className="relative flex h-8 w-8 items-center justify-center rounded-xl text-[#7B82A0] hover:bg-[#EEF0F8] hover:text-[#1A2038] transition-all"
+            className="relative flex h-9 w-9 items-center justify-center rounded-xl text-[#64718A] transition-colors hover:bg-[#EEF0F8] hover:text-[#1A2038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/30"
             title="Notifications"
+            aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ''}`}
+            aria-expanded={showNotifs}
           >
             <AppIcon name="notification" size={18} />
             {unreadCount > 0 && (
@@ -286,7 +313,7 @@ export default function Sidebar() {
           type="button"
           onClick={() => setSidebarCollapsed(true)}
           title="Collapse sidebar"
-          className="hidden md:flex h-8 w-8 items-center justify-center rounded-xl text-[#7B82A0] hover:bg-[#EEF0F8] hover:text-[#1A2038] transition-all"
+          className="hidden md:flex h-9 w-9 items-center justify-center rounded-xl text-[#64718A] transition-colors hover:bg-[#EEF0F8] hover:text-[#1A2038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/30"
         >
           <AppIcon name="arrow-left" size={16} />
         </button>
@@ -294,7 +321,7 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={() => setMobileOpen(false)}
-          className="flex md:hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl text-[#7B82A0] hover:bg-[#EEF0F8] hover:text-[#1A2038] transition-all"
+          className="flex md:hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl text-[#64718A] transition-colors hover:bg-[#EEF0F8] hover:text-[#1A2038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/30"
           title="Close"
         >
           <AppIcon name="x" size={16} />
@@ -305,14 +332,15 @@ export default function Sidebar() {
       {/* Search */}
       <div className="shrink-0 px-3 pt-3 pb-2">
         <div className="relative">
-          <AppIcon name="search-normal" size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#7B82A0]" />
+          <AppIcon name="search-normal" size={17} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#64718A]" />
           <input
             ref={searchRef}
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search pages, leads..."
-            className="w-full rounded-xl border border-[#E3E6EF] bg-white py-2 pl-8 pr-3 text-xs text-[#1A2038] placeholder:text-[#7B82A0] outline-none focus:border-navy focus:ring-1 focus:ring-navy/20 transition-all"
+            placeholder="Search pages"
+            aria-label="Search pages, leads and campaigns"
+            className="w-full rounded-xl border border-[#DCE2EC] bg-white py-2.5 pl-10 pr-16 text-[13px] text-[#1A2038] placeholder:text-[#7B82A0] outline-none transition-shadow focus:border-navy/50 focus:ring-2 focus:ring-navy/10"
           />
           {search ? (
             <button
@@ -323,7 +351,7 @@ export default function Sidebar() {
               <AppIcon name="close-square" size={14} />
             </button>
           ) : (
-            <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-[#E3E6EF] bg-[#F7F8FA] px-1.5 py-0.5 text-[9.5px] font-mono font-medium text-[#7B82A0] pointer-events-none">
+            <kbd className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 rounded-md border border-[#E3E6EF] bg-[#F7F8FA] px-1.5 py-1 text-[9px] font-mono font-medium text-[#7B82A0]">
               Ctrl K
             </kbd>
           )}
@@ -411,53 +439,105 @@ export default function Sidebar() {
           </div>
         )}
 
-        {!q && navGroups.map((group) => {
-          const isOpen = openGroup === group.g
-          const hasActive = group.items.some((item) => location.pathname === `/${item.s}`)
+        {!q && navigationSections.map(([section, groups], sectionIndex) => (
+          <section
+            key={section}
+            aria-label={`${section} navigation`}
+            className={`${sectionIndex > 0 ? 'mt-3 border-t border-[#E3E6EF] pt-3' : ''} mb-3`}
+          >
+            <h2 className="flex items-center gap-2 px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-[#8790A5]">
+              <span>{section}</span>
+              <span className="h-px flex-1 bg-[#E3E6EF]" aria-hidden="true" />
+            </h2>
+            <div className="space-y-1">
+              {groups.map((group) => {
+                const isOpen = openGroups.includes(group.g)
+                const hasActive = group.items.some((item) => activePath === `/${item.s}`)
+                const itemsId = groupId(group.g)
 
-          return (
-            <div key={group.g} className="mb-0.5">
-              {/* Group header */}
-              <button
-                type="button"
-                onClick={() => handleGroupClick(group.g)}
-                className={`flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left transition-all ${
-                  hasActive && !isOpen
-                    ? 'text-navy font-semibold'
-                    : 'text-[#7B82A0] hover:text-[#1A2038]'
-                }`}
-              >
-                <span className="flex-1 truncate text-[10.5px] font-semibold uppercase tracking-wider">
-                  {group.g}
-                </span>
-                <AppIcon name={isOpen ? 'chevron-down' : 'chevron-right'} size={13} className="transition-transform duration-200" />
-              </button>
-
-              {/* Group items */}
-              {isOpen && (
-                <div className="mb-1 space-y-0.5 pl-1">
-                  {group.items.map((item) => {
-                    const isActive = location.pathname === `/${item.s}`
-                    return (
-                      <button
-                        key={item.s}
-                        onClick={() => handleNav(item.s)}
-                        className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[12.5px] font-medium transition-all ${
-                          isActive
-                            ? 'bg-navy text-white shadow-sm'
-                            : 'text-[#535870] hover:bg-[#EEF0F8] hover:text-[#1A2038]'
+                return (
+                  <div key={group.g}>
+                    <button
+                      type="button"
+                      onClick={() => handleGroupClick(group.g)}
+                      className={`flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 text-left text-[13px] font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/25 ${
+                        hasActive
+                          ? 'border-[#D8E3FF] bg-[#EEF4FF] text-navy'
+                          : 'border-transparent text-[#536079] hover:border-[#E3E8F0] hover:bg-white hover:text-[#1A2038]'
+                      }`}
+                      aria-label={`${group.g} navigation group`}
+                      aria-expanded={isOpen}
+                      aria-controls={isOpen ? itemsId : undefined}
+                    >
+                      <span
+                        className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
+                          hasActive ? 'bg-white text-navy shadow-sm' : 'bg-[#EEF1F6] text-[#64718A]'
                         }`}
                       >
-                        <NavIcon tiClass={item.ic} />
-                        <span className="flex-1 truncate">{item.l}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
+                        <NavIcon tiClass={groupIcon(group.g)} />
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{group.g}</span>
+                      <AppIcon
+                        name={isOpen ? 'chevron-down' : 'chevron-right'}
+                        size={15}
+                        className="shrink-0 text-[#8490A5] transition-transform duration-200"
+                      />
+                    </button>
+
+                    {isOpen ? (
+                      <div
+                        id={itemsId}
+                        className="mb-1 ml-5 mt-1 space-y-1 border-l border-[#DCE2EC] pl-2"
+                      >
+                        {group.items.map((item) => {
+                          const isActive = activePath === `/${item.s}`
+                          return (
+                            <div key={item.s} className="relative">
+                              <span
+                                className="absolute left-[-9px] top-1/2 h-px w-2 bg-[#DCE2EC]"
+                                aria-hidden="true"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleNav(item.s)}
+                                aria-current={isActive ? 'page' : undefined}
+                                className={`relative flex min-h-10 w-full items-center gap-2.5 rounded-xl border px-2.5 text-left text-[12.5px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/25 ${
+                                  isActive
+                                    ? 'border-[#D8E3FF] bg-white text-navy shadow-sm'
+                                    : 'border-transparent text-[#536079] hover:bg-white hover:text-[#1A2038]'
+                                }`}
+                              >
+                                {isActive ? (
+                                  <span
+                                    className="absolute bottom-2 left-0 top-2 w-[3px] rounded-r-full bg-navy"
+                                    aria-hidden="true"
+                                  />
+                                ) : null}
+                                <NavIcon tiClass={item.ic} />
+                                <span className="min-w-0 flex-1 truncate">{item.l}</span>
+                                {item.b ? (
+                                  <span
+                                    className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold ${
+                                      item.bt === 'red'
+                                        ? 'bg-red/10 text-red'
+                                        : 'bg-blue-100 text-blue-800'
+                                    }`}
+                                  >
+                                    {item.b}
+                                  </span>
+                                ) : null}
+                              </button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                )
+              })}
             </div>
-          )
-        })}
+          </section>
+        ))}
       </div>
 
       {/* Account footer */}
@@ -485,9 +565,9 @@ export default function Sidebar() {
 
   // ── Collapsed icon rail (desktop only) ───────────────────────────────────
   const collapsedRail = (
-    <div className="flex h-full flex-col items-center overflow-hidden py-2">
+    <div className="flex h-full flex-col items-center overflow-hidden py-3">
       {/* Brand icon */}
-      <div className="mb-2 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-navy text-sm font-bold text-white shadow-sm" style={{ fontFamily: 'var(--font-heading)' }}>
+      <div className="mb-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-navy text-base font-bold text-white shadow-sm" style={{ fontFamily: 'var(--font-heading)' }}>
         B
       </div>
 
@@ -500,7 +580,7 @@ export default function Sidebar() {
         <button
           type="button"
           onClick={() => setSidebarCollapsed(false)}
-          className="mb-3 flex h-8 w-8 items-center justify-center rounded-xl text-[#7B82A0] hover:bg-[#EEF0F8] hover:text-[#1A2038] transition-all"
+          className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl text-[#64718A] transition-colors hover:bg-[#EEF0F8] hover:text-[#1A2038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/30"
         >
           <AppIcon name="arrow-right" size={16} />
         </button>
@@ -514,7 +594,7 @@ export default function Sidebar() {
             setSidebarCollapsed(false)
             toggleNotifs(e)
           }}
-          className="relative mb-1 flex h-8 w-8 items-center justify-center rounded-xl text-[#7B82A0] hover:bg-[#EEF0F8] hover:text-[#1A2038] transition-all"
+          className="relative mb-1 flex h-9 w-9 items-center justify-center rounded-xl text-[#64718A] transition-colors hover:bg-[#EEF0F8] hover:text-[#1A2038] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/30"
         >
           <AppIcon name="notification" size={18} />
           {unreadCount > 0 && (
@@ -524,28 +604,32 @@ export default function Sidebar() {
       </Tooltip>
 
       {/* One icon per group */}
-      <div className="mt-2 flex-1 overflow-y-auto space-y-0.5 w-full flex flex-col items-center">
+      <div className="mt-2 flex w-full flex-1 flex-col items-center space-y-1 overflow-y-auto">
         {navGroups.map((group) => {
-          const firstItem = group.items[0]
-          if (!firstItem) return null
           const isGroupActive = group.items.some((item) => activePath === `/${item.s}`)
           return (
             <Tooltip key={group.g} label={group.g}>
               <button
                 type="button"
                 title={group.g}
+                aria-label={`${group.g} navigation group`}
+                aria-expanded={openGroups.includes(group.g)}
                 onClick={() => {
                   setSidebarCollapsed(false)
-                  setOpenGroup(group.g)
-                  handleNav(firstItem.s)
+                  setNavigationState((current) => ({
+                    ...current,
+                    openGroups: current.openGroups.includes(group.g)
+                      ? current.openGroups
+                      : [...current.openGroups, group.g],
+                  }))
                 }}
-                className={`flex h-9 w-9 items-center justify-center rounded-xl transition-all ${
+                className={`flex h-10 w-10 items-center justify-center rounded-xl border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-navy/30 ${
                   isGroupActive
-                    ? 'bg-navy text-white shadow-sm'
-                    : 'text-[#7B82A0] hover:bg-[#EEF0F8] hover:text-[#1A2038]'
+                    ? 'border-[#D8E3FF] bg-[#EEF4FF] text-navy shadow-sm'
+                    : 'border-transparent text-[#64718A] hover:border-[#E3E8F0] hover:bg-white hover:text-[#1A2038]'
                 }`}
               >
-                <NavIcon tiClass={firstItem.ic} />
+                <NavIcon tiClass={groupIcon(group.g)} />
               </button>
             </Tooltip>
           )
@@ -576,8 +660,11 @@ export default function Sidebar() {
 
       {/* Desktop sidebar */}
       <aside
+        aria-label="Primary navigation"
         className={`hidden md:flex flex-col border-r border-[#E3E6EF] bg-[#F7F8FA] transition-[width] duration-200 ease-in-out shrink-0 h-dvh ${
-          sidebarCollapsed ? 'w-[56px] overflow-visible z-30' : 'w-60 overflow-hidden'
+          sidebarCollapsed
+            ? 'w-[72px] overflow-visible z-30'
+            : 'w-64 overflow-hidden lg:w-72 xl:w-[300px]'
         }`}
       >
         {sidebarCollapsed ? collapsedRail : expandedContent}
@@ -585,7 +672,8 @@ export default function Sidebar() {
 
       {/* Mobile drawer */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex w-72 flex-col border-r border-[#E3E6EF] bg-[#F7F8FA] shadow-xl transition-transform duration-250 ease-in-out md:hidden ${
+        aria-label="Primary navigation"
+        className={`fixed inset-y-0 left-0 z-50 flex w-[min(300px,calc(100vw-2rem))] flex-col border-r border-[#E3E6EF] bg-[#F7F8FA] shadow-xl transition-transform duration-250 ease-in-out md:hidden ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >

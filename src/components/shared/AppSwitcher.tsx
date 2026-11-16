@@ -26,6 +26,14 @@ import {
 } from '../../app/shell/app-switcher.utils'
 import './app-switcher.css'
 
+function createWorkspaceSwitchTransition(
+  sourceApp: WorkspaceAppId,
+  targetApp: WorkspaceAppId,
+  origin: WorkspaceSwitchOrigin,
+): WorkspaceSwitchTransition {
+  return { sourceApp, targetApp, origin, startedAt: Date.now() }
+}
+
 function Glyph({ app }: { app: WorkspaceAppId }) {
   return (
     <svg
@@ -238,12 +246,7 @@ export default function AppSwitcher({
 
     event.preventDefault()
     const origin = randomSwitchOrigin(detailsRef.current)
-    const transition: WorkspaceSwitchTransition = {
-      sourceApp: currentApp,
-      targetApp: app.id,
-      origin,
-      startedAt: Date.now(),
-    }
+    const transition = createWorkspaceSwitchTransition(currentApp, app.id, origin)
     rememberWorkspaceSwitch(app.id, { sourceApp: currentApp, origin })
     detailsRef.current?.removeAttribute('open')
     setSwitching(transition)
